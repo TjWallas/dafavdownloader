@@ -1,0 +1,96 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Help</title>
+<!-- 
+   Copyright (C) 2009-2011  Philippe Busque
+   https://sourceforge.net/projects/dafavdownloader/
+   
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+ -->
+</head>
+<body>
+<h1>deviantART Favorites Downloader</h1>
+<h2>User Manual
+<p>Version 1.2.0</p>
+<p>Copyright © 2009-2010 Dragoniade<br/>
+</p>
+
+<br/><hr/><br/>
+
+<ul>
+   <li><a href="Index.html">Introduction</a></li>
+   <li><a href="HowToUse.html">How to use</a></li>
+   <li><a href="Preferences.html">Preferences</a></li>
+   <li><a href="Copyright.html">Copyright</a></li>
+</ul>
+<h2>Preferences</h2>
+<center><img src="images/Preferences.png"/><br/></center>
+<p>
+<b>DeviantArt Favorites Downloader</b> can be customized in order to better fit your sorting habits. 
+</p>
+
+<h3>Username</h3>
+<p>
+This control which user's favorite or gallery you're downloading. For most usage, it will be your own deviantART username, but if you want to download someone's else arts or a club arts, you can input their username there. 
+</p>
+
+<h3>Favorites, Gallery or Scrapbook</h3>
+<p>
+This control what to download. You can either download the user favorites (usually yours) or put another user and download his/her gallery and scrapbook. The default is to download the user favorites. 
+</p>
+
+<h3>Download Location</h3>
+<p>
+This control where the 'clean' deviations will be saved to. You can build any path as long as the drive exists and you don't use forbidden characters. You can customize path using informations from the downloaded deviation by substituting their field inside the path. The fields are listed bellow. A sample path is showed in the example field at the bottom.  
+</p>
+<h3>Mature Download Location</h3>
+<p>
+This control where the 'mature' deviations will be saved to. Should you want to save those deviations elsewhere, safety, privacy, usage or any reasons, you can specify it there. If you don't mind having both clean and matures deviations saved in the same destination, input the same path or check the '<i>Use same location for mature deviation</i>' box. A sample path is showed in the example field at the bottom.
+</p>
+<h2>Fields</h2>
+<ul>
+<li><b>%user%</b> The user's username whose favorites are being downloaded. Same as inputed in the username box above,</li>
+<li><b>%collection%</b> When downloading from a collection / folder, this is the currently donwnloaded collection name,</li>
+<li><b>%artist%</b> The username of person who has submitted the deviation being saved,</li>
+<li><b>%title%</b> The deviation's title, aka the '<i>Deviation Title</i>'. The title is normalized to remove any forbidden characters,</li>
+<li><b>%id%</b> The deviation's id, example 123456789,</li>
+<li><b>%filename%</b> The deviation's filename,</li>
+<li><b>%ext%</b> The deviation's filename extension</li>
+</ul>
+<p>
+At least one of the supplied field must be supplied: %id%, %filename%.
+</p>
+<h3>Proxy</h3>
+<p>
+This configure the application to use an HTTP proxy to access deviantART. Useful if your computer is behind a firewall or a private network. You can configure the host, the port and the username / password if applicaple.<br/>
+Searche are automatically retested with the new connection setting, to ensure they're valid.
+</p>
+<h3>Throttling</h3>
+<p>
+The application doesn't download files that have already been downloaded. When performing a rerun, this mean files will be skipped and deviantART will be contacted over and over for favorites updates. To lessen the load, a delay between search can be configured.  If the delay between searches are less than 10 seconds, a pause is performed for as many seconds specified here.
+</p>
+<h3>Searcher</h3>
+<p>
+Allow you to select which searcher to use. A searcher is what retrieve the information from deviantART about the favorites/gallery. Since deviantART doesn't provide any public API, the method to access this data may change overtime.<br/>
+Should new searchers be made available, you can select another one here. Currently only the RSS searcher is available.  
+</p>
+<br/><hr/>
+Copyright © 2009-2010 Philippe Busque. All Right Reserved.<br/>
+Do you like this software? If so, feel free to <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=GNMM5PVW44Z24"><img border="0" src="images/logo/btn_donate_LG.gif"/></a>.
+</body>
+</html>
