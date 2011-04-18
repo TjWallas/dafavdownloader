@@ -25,31 +25,55 @@ import java.util.Map;
 
 import javax.swing.JFrame;
 
+import org.apache.commons.httpclient.HttpClient;
+
 import com.dragoniade.deviantart.ui.ProgressDialog;
 
 public interface Search {
 
 	public enum SEARCH {
-		GALLERY ("gallery"),
-		FAVORITE ("favby");
+		FAVORITE ("favby","favby:%username%", "favourites", "Favorites"),
+		GALLERY ("gallery","gallery:%username%", "gallery", "Gallery"),
+		SCRAPBOOK ("scraps","gallery:%username%+in:scraps", null, "Scrapbook");
 		
+		private final String id;
 		private final String search;
+		private final String label;
+		private final String collection;
+		
 	    private static final Map<String,SEARCH> lookup = new HashMap<String,SEARCH>();
 	    static {
 	         for(SEARCH s : EnumSet.allOf(SEARCH.class))
-	              lookup.put(s.search, s);
+	              lookup.put(s.id, s);
 	    }
 	    static public SEARCH lookup(String name) {
 	    	return lookup.get(name);
 	    }
-		SEARCH(String search){
+	    
+		SEARCH(String id, String search, String collection, String label){
 			this.search = search;
+			this.id = id;
+			this.collection = collection;
+			this.label = label;
 		};
-		String getSearch() {
+		
+		public String getSearch() {
 			return search;
 		}
-		public String toString() {
-			return search;
+		
+		public String getLabel() {
+			return label;
+		}
+		
+		public String getCollection() {
+			return collection;
+		}
+		
+		public String getId() {
+			return id;
+		}
+		public static SEARCH getDefault() {
+			return FAVORITE;
 		}
 	}
 	
@@ -77,7 +101,7 @@ public interface Search {
 	/*
 	 * Get a search result iteration or null if there is no more results.
 	 */
-	public List<Deviation> search(ProgressDialog progress);
+	public List<Deviation> search(ProgressDialog progress, Collection collection);
 
 	/*
 	 * Set the starting point, from the end of the results.
@@ -103,4 +127,10 @@ public interface Search {
 	 */
 	public String getName();
 	
+	/*
+	 * Set the Http Client to be used
+	 */
+	public void setClient(HttpClient client);
+	
+	public List<Collection> getCollections();
 }

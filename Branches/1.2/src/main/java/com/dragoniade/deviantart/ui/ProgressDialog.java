@@ -33,6 +33,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.SwingConstants;
+import javax.swing.border.EmptyBorder;
 
 public class ProgressDialog extends JDialog implements ActionListener, WindowListener{
     /**
@@ -70,6 +71,7 @@ public class ProgressDialog extends JDialog implements ActionListener, WindowLis
         addWindowListener(this);
         
         message = new JLabel("");
+        message.setBorder(new EmptyBorder(0,5,0,5));
         cancel = new JButton("Cancel");
         cancel.addActionListener(this);
         

@@ -58,6 +58,7 @@ public class AboutDialog extends JDialog {
 		});
 		
 		JButton okButton = new JButton("Ok");
+		okButton.requestFocusInWindow();
 		okButton.addActionListener( new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				AboutDialog.this.setVisible(false);
@@ -84,13 +85,14 @@ public class AboutDialog extends JDialog {
 
 		this.add(textPane);
 		this.add(panel);
-		this.pack();
-		this.setResizable(false);
 		
+		this.setResizable(false);
+		this.pack();
 		int x = (owner.getWidth() - this.getWidth()) / 2;
 		int y = (owner.getHeight() - this.getHeight()) / 2;
 		
 		this.setLocation(owner.getLocation().x + x, owner.getLocation().y + y);
+		this.pack();
 		setVisible(true);
 	}
 }

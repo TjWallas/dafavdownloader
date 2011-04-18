@@ -18,10 +18,13 @@
 */
 package com.dragoniade.deviantart.deviation;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+
+import org.apache.commons.httpclient.HttpClient;
 
 import com.dragoniade.deviantart.ui.ProgressDialog;
 
@@ -41,7 +44,7 @@ public class SearchResources implements Search{
 		this.offset = this.offset * 1;
 	}
 	
-	public List<Deviation> search(ProgressDialog progress) {
+	public List<Deviation> search(ProgressDialog progress, Collection collection) {
 		if ( user == null ) {
 			throw new IllegalStateException("You must set the user before searching.");
 		}
@@ -88,4 +91,9 @@ public class SearchResources implements Search{
 		return 75;
 	}
 	
+	public void setClient(HttpClient client) {}
+	
+	public List<Collection> getCollections() {
+		return new ArrayList<Collection>();
+	}
 }

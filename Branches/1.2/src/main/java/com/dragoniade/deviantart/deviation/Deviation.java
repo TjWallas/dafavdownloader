@@ -38,6 +38,7 @@ public class Deviation implements Serializable {
 	private Date timestamp;
 	private String category;
 	private boolean mature;
+	private Collection collection;
 	
 	public boolean isMature() {
 		return mature;
@@ -131,4 +132,13 @@ public class Deviation implements Serializable {
 	public void setDocumentFilename(String documentFilename) {
 		this.documentFilename = documentFilename;
 	}
+	
+	public Collection getCollection() {
+		return collection;
+	}
+	public void setCollection(Collection collection) {
+		this.collection = collection;
+	}
+	
+	
 }

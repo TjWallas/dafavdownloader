@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -30,16 +31,22 @@ import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JTextPane;
 
+import org.apache.commons.httpclient.HostConfiguration;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
 import org.apache.commons.httpclient.HttpVersion;
+import org.apache.commons.httpclient.ProxyHost;
+import org.apache.commons.httpclient.UsernamePasswordCredentials;
+import org.apache.commons.httpclient.auth.AuthScope;
 import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.httpclient.params.HttpClientParams;
 
+import com.dragoniade.deviantart.deviation.Collection;
 import com.dragoniade.deviantart.deviation.Deviation;
 import com.dragoniade.deviantart.deviation.Search;
 import com.dragoniade.deviantart.ui.LocationHelper;
 import com.dragoniade.deviantart.ui.ProgressDialog;
+import com.dragoniade.deviantart.ui.ProxyCfg;
 import com.dragoniade.deviantart.ui.SwingThread;
 import com.dragoniade.deviantart.ui.YesNoAllDialog;
 import com.dragoniade.exceptions.LoggableException;
@@ -55,7 +62,8 @@ public class FavoritesDownloader {
 	private JFrame owner;
 	private int sleepThrottle = 0;
 	private int requestCount = 0;
-	Search searcher;
+	private Search searcher;
+	private boolean skipCollection = false;
 	
 	private enum STATUS {
 		DOWNLOADED,
@@ -74,6 +82,7 @@ public class FavoritesDownloader {
 		params.setVersion(HttpVersion.HTTP_1_1);
 		params.setSoTimeout(30000);
 		client = new HttpClient(params);
+		searcher.setClient(client);
 	}
 	
 	public void setGUI(JFrame owner,JTextPane textPane, ProgressDialog progress ) {
@@ -82,6 +91,27 @@ public class FavoritesDownloader {
 		this.progress = progress;
 	}
 
+	public void skipCollection(boolean skipCollection) {
+		this.skipCollection = skipCollection;
+	}
+	
+	public void setProxy(ProxyCfg prx) {
+		HostConfiguration hostConfiguration = client.getHostConfiguration();
+		if ( prx != null) {
+			ProxyHost proxyHost = new ProxyHost(prx.getHost(), prx.getPort());
+			hostConfiguration.setProxyHost(proxyHost);	
+			if (prx.getUsername() != null) {
+				UsernamePasswordCredentials upCred = new UsernamePasswordCredentials(prx.getUsername(), prx.getPassword());
+				client.getState().setProxyCredentials(AuthScope.ANY, upCred);
+			} else {
+				client.getState().clearProxyCredentials();
+			}
+		} else {
+			hostConfiguration.setProxyHost(null);	
+			client.getState().clearProxyCredentials();
+		}
+	}
+	
 	private File getFile(Deviation da, String url, String filename, AtomicBoolean download, 
 			YesNoAllDialog matureMoveDialog, YesNoAllDialog overwriteDialog, YesNoAllDialog overwriteNewerDialog, YesNoAllDialog deleteEmptyDialog) {
 		
@@ -179,107 +209,123 @@ public class FavoritesDownloader {
 		YesNoAllDialog overwriteDialog = new YesNoAllDialog();
 		YesNoAllDialog overwriteNewerDialog = new YesNoAllDialog();
 		YesNoAllDialog deleteEmptyDialog = new YesNoAllDialog();
-		long lastSearch = -1L; 
-		while (!progress.isCancelled()) {
+		
+		List<Collection> collections;
+		if (skipCollection) {
+			collections = new ArrayList<Collection>();
+			collections.add(null);
+		} else {
+			collections = searcher.getCollections();
+		}
+		 
+		for (Collection collection : collections) {
+			searcher.startAt(offset);
+			progress.setTotalValue(offset);
 			
-			if (System.currentTimeMillis() - lastSearch  < 10000 ) {
-				throttle();
-			}
-			
-			progress.setText("Fetching results...");
-			List<Deviation> results = searcher.search(progress);
-			requestCount++;
-			lastSearch = System.currentTimeMillis();
-			
-			if (results == null) {
-				return;
-			}
-			total = searcher.getTotal();
-			progress.setTotalMax(total);
-			
-			if (results.size() > 0) {
-				for (Deviation da : results) {
-					if (progress.isCancelled()) {
-						return;
-					}
-					boolean downloaded = false;
-					progress.setUnitMax(1);
-						
-					if (da.getDocumentDownloadUrl() != null) {
-						String url = da.getDocumentDownloadUrl();
-						String filename = da.getDocumentFilename();
-						
-						if (filename == null) {
-							AtomicBoolean download = new AtomicBoolean(true);
-							url = getDocumentUrl(da, download);
-							if (url == null) {
-								return;
-							}
-							if (!download.get()) {
-								skipped++; 
-								nextDeviation(skipped); 
-								continue;
-							}
-						}
-						filename = Deviation.extractFilename(url);
-						STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
-						
-						if (status == null) {
+			while (!progress.isCancelled()) {
+				
+				progress.setText("Fetching results " + (collection != null ? collection.getName() : "..."));
+				List<Deviation> results = searcher.search(progress, collection);
+				requestCount++;
+				
+				if (results == null) {
+					return;
+				}
+				total = searcher.getTotal();
+				progress.setTotalMax(total);
+				
+				if (results.size() > 0) {
+					for (Deviation da : results) {
+						if (progress.isCancelled()) {
 							return;
 						}
+						boolean downloaded = false;
+						progress.setUnitMax(1);
+							
+						if (da.getDocumentDownloadUrl() != null) {
+							String url = da.getDocumentDownloadUrl();
+							String filename = da.getDocumentFilename();
+							
+							if (filename == null) {
+								AtomicBoolean download = new AtomicBoolean(true);
+								url = getDocumentUrl(da, download);
+								if (url == null) {
+									return;
+								}
+								if (!download.get()) {
+									skipped++; 
+									if (!nextDeviation(skipped)) {
+										return;
+									}
+									continue;
+								}
+							}
+							filename = Deviation.extractFilename(url);
+							STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
+							
+							if (status == null) {
+								return;
+							}
+							
+							switch (status) {
+								case CANCEL : return;
+								case SKIP : 
+									skipped++; 
+									if (!nextDeviation(skipped)) {
+										return;
+									} 
+									continue;
+								case DOWNLOADED : 
+									downloaded = true;
+									break;
+								case NOTFOUND: 
+									if (da.getImageDownloadUrl() == null) {
+										String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + url + " was not found" +  "</a>";
+										setPaneText(text);
+										progress.incremTotal();
+									}
+							}
+						}
 						
-						switch (status) {
-							case CANCEL : return;
-							case SKIP : 
-								skipped++; 
-								nextDeviation(skipped); 
-								continue;
-							case DOWNLOADED : 
-								downloaded = true;
-								break;
-							case NOTFOUND: 
-								if (da.getImageDownloadUrl() == null) {
+						if (da.getImageDownloadUrl() != null && !downloaded) {
+							String url = da.getImageDownloadUrl();
+							String filename = da.getImageFilename();
+							
+							STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
+							
+							if (status == null) {
+								return;
+							}
+							
+							switch (status) {
+								case CANCEL : return;
+								case SKIP : 
+									skipped++; 
+									if (!nextDeviation(skipped)) {
+										return;
+									} 
+									continue;
+								case DOWNLOADED : 
+									downloaded = true;
+									break;
+								case NOTFOUND: 
 									String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + url + " was not found" +  "</a>";
 									setPaneText(text);
 									progress.incremTotal();
-								}
+							}
 						}
-					}
-					
-					if (da.getImageDownloadUrl() != null && !downloaded) {
-						String url = da.getImageDownloadUrl();
-						String filename = da.getImageFilename();
-						
-						STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
-						
-						if (status == null) {
+						if (!nextDeviation(skipped)) {
 							return;
-						}
-						
-						switch (status) {
-							case CANCEL : return;
-							case SKIP : 
-								skipped++; 
-								nextDeviation(skipped); 
-								continue;
-							case DOWNLOADED : 
-								downloaded = true;
-								break;
-							case NOTFOUND: 
-								String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + url + " was not found" +  "</a>";
-								setPaneText(text);
-								progress.incremTotal();
-						}
+						} 
 					}
-					nextDeviation(skipped); 
+				} else {
+					break;
 				}
-			} else {
-				return;
 			}
 		}
 	}
 	
-	private void nextDeviation(int skipped) {
+	private boolean nextDeviation(int skipped) {
 		
 		progress.incremTotal();
 		progress.setUnitValue(1);
@@ -288,13 +334,14 @@ public class FavoritesDownloader {
 		if (skipped == 480) {
 			int res = showConfirmDialog(owner, "480 deviations have been skipped so far. Continue scanning?","Continue?",JOptionPane.YES_NO_OPTION );
 			if (res == JOptionPane.NO_OPTION) {
-				return;
+				return false;
 			}
 		}
 		 
 		if (requestCount > 20) {
 			throttle();
 		}
+		return true;
 	}
 	
 	private void throttle() {

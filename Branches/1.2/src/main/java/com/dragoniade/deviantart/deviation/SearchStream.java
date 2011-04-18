@@ -18,20 +18,21 @@
 */
 package com.dragoniade.deviantart.deviation;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
-import org.apache.commons.httpclient.HttpVersion;
 import org.apache.commons.httpclient.methods.GetMethod;
-import org.apache.commons.httpclient.params.HttpClientParams;
 import org.w3c.dom.Element;
 
 import com.dragoniade.deviantart.ui.DialogHelper;
@@ -54,23 +55,18 @@ public class SearchStream implements Search{
 	public SearchStream() {
 		this.offset = 0;
 		this.total = -1;
-		
-		HttpClientParams params = new HttpClientParams();
-		params.setVirtualHost("www.deviantart.com");
-		params.setVersion(HttpVersion.HTTP_1_1);
-		client = new HttpClient(params);
-		
 	}
 	
-	public List<Deviation> search(ProgressDialog progress) {
+	
+	public List<Deviation> search(ProgressDialog progress, Collection collection) {
 		if ( user == null ) {
 			throw new IllegalStateException("You must set the user before searching.");
 		}
 		if ( search == null ) {
 			throw new IllegalStateException("You must set the search type before searching.");
 		}
-		
-		String queryString = "http://www.deviantart.com/global/difi.php?c=Stream;thumbs;" + search.toString() + ":" + user + "," + offset +"," + OFFSET + "&t=xml";
+		String searchQuery = search.getSearch().replace("%username%", user);
+		String queryString = "http://www.deviantart.com/global/difi.php?c=Stream;thumbs;" + searchQuery + "," + offset +"," + OFFSET + "&t=xml";
 		GetMethod method = new GetMethod(queryString);
 		List<Deviation> results = new ArrayList<Deviation>(OFFSET);
 		try {
@@ -78,10 +74,6 @@ public class SearchStream implements Search{
 			do {
 				sc = client.executeMethod(method);
 				if (sc != 200) {
-					
-					LoggableException ex = new LoggableException(method.getResponseBodyAsString());
-					Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);	
-					
 					int res = DialogHelper.showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_OPTION );
 					if (res == JOptionPane.NO_OPTION) {
 						return null;
@@ -135,6 +127,7 @@ public class SearchStream implements Search{
 				da.setUrl(toolkit.getNodeAsString(deviation, "url"));
 				da.setTimestamp(new Date(toolkit.getNodeAsLong(deviation, "ts")*1000));
 				da.setMature("1".equals(toolkit.getNodeAsString(deviation, "is_mature")));
+				da.setCollection(collection);
 				
 				String filenameStr = toolkit.getNodeAsString(deviation, "filename");
 				String imageUrl = toolkit.getNodeAsString(deviation, "image/url");
@@ -191,11 +184,12 @@ public class SearchStream implements Search{
 	public boolean validate() {
 		String user = "";
 		String offset = "0";
-		SEARCH search = SEARCH.FAVORITE;
+		SEARCH search = SEARCH.getDefault();
 		
 		XmlToolkit toolkit = XmlToolkit.getInstance();
+		String searchQuery = search.getSearch().replace("%username%", user);
 		
-		String queryString = "http://www.deviantart.com/global/difi.php?c=Stream;thumbs;" + search.toString() + ":" + user + "," + offset +"," + OFFSET + "&t=xml";
+		String queryString = "http://www.deviantart.com/global/difi.php?c=Stream;thumbs;" + searchQuery + "," + offset +"," + OFFSET + "&t=xml";
 		GetMethod method = new GetMethod(queryString);
 		try {
 			int sc = client.executeMethod(method);
@@ -220,5 +214,62 @@ public class SearchStream implements Search{
 	public int priority() {
 		// Disabled by DA
 		return 0;
+	}
+
+	public void setClient(HttpClient client) {
+		this.client = client;
+	}
+	public List<Collection> getCollections() {
+		List<Collection> collections = new ArrayList<Collection>();
+		
+		if (search.getCollection() == null) {
+			collections.add(null);
+			return collections;
+		}
+		
+		String queryString = "http://" + user + ".deviantart.com/" + search.getCollection() + "/";
+		GetMethod method = new GetMethod(queryString);
+				
+		try {
+			int sc = -1;
+			do {
+				sc = client.executeMethod(method);
+				if (sc != 200) {
+					LoggableException ex = new LoggableException(method.getResponseBodyAsString());
+					Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);
+					
+					int res = DialogHelper.showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_OPTION );
+					if (res == JOptionPane.NO_OPTION) {
+						return null;
+					}
+				}
+			} while (sc != 200); 
+			
+			InputStream is = method.getResponseBodyAsStream();
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			
+			byte[] buffer = new byte[4096];
+			int read = -1;
+			while ((read = is.read(buffer)) > -1) {
+				baos.write(buffer,0,read);
+			}
+			String charsetName = method.getResponseCharSet();
+			String body = baos.toString(charsetName);
+			String regex = user + ".deviantart.com/" + search.getCollection() + "/([0-9]+)\"[^>]*>([^<]+)<";
+			Pattern pattern = Pattern.compile(regex,Pattern.CASE_INSENSITIVE);
+			Matcher matcher = pattern.matcher(body);
+			while (matcher.find()) {
+				String id = matcher.group(1);
+				String name = matcher.group(2);
+				Collection c = new Collection(Long.parseLong(id), name);
+				collections.add(c);
+			}
+		}
+		catch (IOException e) {
+		} finally {
+			method.releaseConnection();
+		}
+		collections.add(null);
+		return collections;
 	}
 }

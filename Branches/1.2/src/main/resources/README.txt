@@ -1,7 +1,7 @@
 deviantART Favorites Downloader
 Created by Dragoniade
 
-Version 1.1.0
+Version 1.2.0
 
 1. Installation
 2. Usage
@@ -89,6 +89,15 @@ too many request hammer their server.  A 5 seconds throttle is the minimum defau
 
 
 3 Changes log
+
+Version 1.2.0  2011/04/17
+* Added proxy support.
+* Added favorite collections / gallery folder support. Use the %collection% tag
+  in the location configuration.
+* Added scrapbook download support.
+* Added ability to change the username and download type from the main window.
+* Added the ability to skip collection download. 
+
 
 Version 1.1.0  2011/01/23
 * Added Support for custom searcher. 

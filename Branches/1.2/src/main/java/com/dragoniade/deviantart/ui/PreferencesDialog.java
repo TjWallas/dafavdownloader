@@ -34,6 +34,7 @@ import java.util.Properties;
 import java.util.Stack;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.InputVerifier;
@@ -46,6 +47,7 @@ import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JPasswordField;
 import javax.swing.JRadioButton;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
@@ -54,8 +56,19 @@ import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
+
+import org.apache.commons.httpclient.HostConfiguration;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpVersion;
+import org.apache.commons.httpclient.ProxyHost;
+import org.apache.commons.httpclient.UsernamePasswordCredentials;
+import org.apache.commons.httpclient.auth.AuthScope;
+import org.apache.commons.httpclient.params.HttpClientParams;
 
 import com.dragoniade.clazz.SearcherClassCache;
+import com.dragoniade.deviantart.deviation.Collection;
 import com.dragoniade.deviantart.deviation.Deviation;
 import com.dragoniade.deviantart.deviation.Search;
 import com.dragoniade.deviantart.deviation.Search.SEARCH;
@@ -69,6 +82,7 @@ public class PreferencesDialog extends JDialog {
  *  %artist% : The Deviation's artist username.
  *  %title% : The Deviations's title, normalized.
  *  %filename% : The Deviation's original filename.
+ *  %collection% : The collection or folder this deviation is part of.
  *  %extE% : The Deviation's extension.
  */
 	
@@ -81,16 +95,29 @@ public class PreferencesDialog extends JDialog {
 	private Deviation sample;
 	private JSpinner throttleSpinner;
 	private JComboBox searcherBox;
-	private JRadioButton galleryRadio;
-	private JRadioButton favoriteRadio;
 	private ButtonGroup buttonGroup;
+	private SEARCH selectedSearch;
+	
+	private JCheckBox prxUseBox;
+	private JTextField prxHostField;
+	private JSpinner prxPortSpinner;
+	private JTextField prxUserField;
+	private JPasswordField prxPassField;
 	
 	private final StringBuilder locationString;
 	private final StringBuilder locationMatureString;
 	private final static String DOWNLOAD_URL = "http://fc09.deviantart.com/fs6/i/2005/098/0/9/Fella_Promo_by_devart.jpg";
+	private HttpClient client;
+	private boolean proxyChangeState = false;
 	
 	public PreferencesDialog(final DownloaderGUI owner,Properties config)  {
 		super(owner,"Preferences",true);
+		
+		HttpClientParams params = new HttpClientParams();
+		params.setVersion(HttpVersion.HTTP_1_1);
+		params.setSoTimeout(30000);
+		client = new HttpClient(params);
+		setProxy(ProxyCfg.parseConfig(config));
 		
 		sample = new Deviation();
 		sample.setId(15972367L);
@@ -98,7 +125,7 @@ public class PreferencesDialog extends JDialog {
 		sample.setArtist("devart");
 		sample.setImageDownloadUrl(DOWNLOAD_URL);
 		sample.setImageFilename(Deviation.extractFilename(DOWNLOAD_URL));
-		
+		sample.setCollection(new Collection(1L, "MyCollect"));
 		setLayout(new BorderLayout());
 		panes = new JTabbedPane(JTabbedPane.TOP);
 		
@@ -111,46 +138,48 @@ public class PreferencesDialog extends JDialog {
 		JLabel userLabel = new JLabel("Username");
 		
 		userLabel.setToolTipText("The username the account you want to download the favorites from.");
+		
 		userField = new JTextField(config.getProperty(Constants.USERNAME));
 		
 		userLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		userLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		userField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		userField.setMaximumSize(new Dimension(Integer.MAX_VALUE, userField.getFont().getSize() * 2));
+				
 		genPanel.add(userLabel);
 		genPanel.add(userField);
 		
 		
-		JLabel searchLabel = new JLabel("Search for");
-		searchLabel.setToolTipText("Select what you want to download from that user: it favorites or it galleries.");
-		
-		galleryRadio = new JRadioButton("Gallery");
-		favoriteRadio = new JRadioButton("Favorites");
-		
-		SEARCH search = SEARCH.lookup(config.getProperty(Constants.SEARCH,SEARCH.FAVORITE.toString()));
-		
-		buttonGroup = new ButtonGroup();
-		buttonGroup.add(favoriteRadio);
-		buttonGroup.add(galleryRadio);
-
-		switch (search) {
-		case FAVORITE:
-			favoriteRadio.setSelected(true);break;
-		case GALLERY:
-			galleryRadio.setSelected(true);break;
-		default:
-			favoriteRadio.setSelected(true);break;
-		}
 		JPanel radioPanel = new JPanel();
 		BoxLayout radioLayout = new BoxLayout(radioPanel,BoxLayout.X_AXIS);
 		radioPanel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		radioPanel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		
 		radioPanel.setLayout(radioLayout);
-
-		galleryRadio.setAlignmentX(JLabel.LEFT_ALIGNMENT);
-		favoriteRadio.setAlignmentX(JLabel.LEFT_ALIGNMENT);
-		searchLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
 		
-		radioPanel.add(favoriteRadio);
-		radioPanel.add(galleryRadio);
+		JLabel searchLabel = new JLabel("Search for");
+		searchLabel.setToolTipText("Select what you want to download from that user: it favorites or it galleries.");
+		searchLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		searchLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		
+		selectedSearch = SEARCH.lookup(config.getProperty(Constants.SEARCH,SEARCH.getDefault().getId()));
+		buttonGroup = new ButtonGroup();
+		
+		for (final SEARCH search :SEARCH.values()) {
+			JRadioButton radio = new JRadioButton(search.getLabel());
+			radio.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+			radio.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				selectedSearch = search;
+			}});
+			
+			buttonGroup.add(radio);
+			radioPanel.add(radio);
+			if (search.equals(selectedSearch)) {
+				radio.setSelected(true);
+			}
+		}
+		
 		genPanel.add(radioPanel);
 		
 		final JTextField sampleField = new JTextField("");
@@ -159,7 +188,7 @@ public class PreferencesDialog extends JDialog {
 		JLabel locationLabel = new JLabel("Download location");
 		locationLabel.setToolTipText("The folder pattern where you want the file to be downloaded in.");
 		
-		JLabel legendsLabel = new JLabel("<html><body>Field names: %user%, %artist%, %title%, %id%, %filename%, %ext%<br></br>Example:</body></html>");
+		JLabel legendsLabel = new JLabel("<html><body>Field names: %user%, %artist%, %title%, %id%, %filename%, %collection%, %ext%<br></br>Example:</body></html>");
 		legendsLabel.setToolTipText("An example of where a file will be downloaded to.");
 		
 		locationString = new StringBuilder();
@@ -275,12 +304,19 @@ public class PreferencesDialog extends JDialog {
 		
 		
 		locationLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		locationLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		locationField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		locationField.setMaximumSize(new Dimension(Integer.MAX_VALUE, locationField.getFont().getSize() * 2));
 		locationMatureLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		locationMatureLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		locationMatureField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		locationMatureField.setMaximumSize(new Dimension(Integer.MAX_VALUE, locationMatureField.getFont().getSize() * 2));
 		useSameForMatureBox.setAlignmentX(JLabel.LEFT_ALIGNMENT);
 		legendsLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		legendsLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		legendsLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, legendsLabel.getFont().getSize() * 2));
 		sampleField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		sampleField.setMaximumSize(new Dimension(Integer.MAX_VALUE, sampleField.getFont().getSize() * 2));
 		
 		genPanel.add(locationLabel);
 		genPanel.add(locationField);
@@ -292,20 +328,136 @@ public class PreferencesDialog extends JDialog {
 		
 		genPanel.add(legendsLabel);
 		genPanel.add(sampleField);
+		genPanel.add(Box.createVerticalBox());
 		
+		final KeyListener prxChangeListener = new KeyListener() {
+			
+			public void keyTyped(KeyEvent e) {
+				proxyChangeState = true;				
+			}
+			public void keyPressed(KeyEvent e) {}
+			public void keyReleased(KeyEvent e) {}
+		};
 		
+		JPanel prxPanel = new JPanel();
+		BoxLayout prxLayout = new BoxLayout(prxPanel,BoxLayout.Y_AXIS); 
+		prxPanel.setLayout(prxLayout);
+		panes.add("Proxy", prxPanel);
 		
-		JPanel advPanel = new JPanel();
+		JLabel prxHostLabel = new JLabel("Proxy Host");
+		prxHostLabel.setToolTipText("The hostname of the proxy server");
+		prxHostField = new JTextField(config.getProperty(Constants.PROXY_HOST));
+		prxHostLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxHostLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		prxHostField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxHostField.setMaximumSize(new Dimension(Integer.MAX_VALUE, prxHostField.getFont().getSize() * 2));
+		
+		JLabel prxPortLabel = new JLabel("Proxy Port");
+		prxPortLabel.setToolTipText("The port of the proxy server (Default 80).");
+
+		prxPortSpinner = new JSpinner();
+		prxPortSpinner.setModel(new SpinnerNumberModel(Integer.parseInt(config.getProperty(Constants.PROXY_PORT,"80")),1,65535,1));
+
+		prxPortLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxPortLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		prxPortSpinner.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxPortSpinner.setMaximumSize(new Dimension(Integer.MAX_VALUE, prxPortSpinner.getFont().getSize() * 2));
+		
+		JLabel prxUserLabel = new JLabel("Proxy username");
+		prxUserLabel.setToolTipText("The username used for authentication, if applicable.");
+		prxUserField = new JTextField(config.getProperty(Constants.PROXY_USERNAME));
+		prxUserLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxUserLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		prxUserField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxUserField.setMaximumSize(new Dimension(Integer.MAX_VALUE, prxUserField.getFont().getSize() * 2));
+		
+		JLabel prxPassLabel = new JLabel("Proxy username");
+		prxPassLabel.setToolTipText("The username used for authentication, if applicable.");
+		prxPassField = new JPasswordField(config.getProperty(Constants.PROXY_PASSWORD));
+		prxPassLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxPassLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
+		prxPassField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		prxPassField.setMaximumSize(new Dimension(Integer.MAX_VALUE, prxPassField.getFont().getSize() * 2));
+		
+		prxUseBox = new JCheckBox("Use a proxy?");
+		prxUseBox.addActionListener(new ActionListener() {
+			
+			public void actionPerformed(ActionEvent e) {
+				prxChangeListener.keyTyped(null);
+				
+				if (prxUseBox.isSelected()) {
+					prxHostField.setEditable(true);
+					prxPortSpinner.setEnabled(true);
+					prxUserField.setEditable(true);
+					prxPassField.setEditable(true);
+
+				} else {
+					prxHostField.setEditable(false);
+					prxPortSpinner.setEnabled(false);
+					prxUserField.setEditable(false);
+					prxPassField.setEditable(false);
+				}
+			}
+		});
+		
+		prxUseBox.setSelected(!Boolean.parseBoolean(config.getProperty(Constants.PROXY_USE)));
+		prxUseBox.doClick();
+		proxyChangeState = false;
+		
+		prxHostField.addKeyListener(prxChangeListener);
+		prxUserField.addKeyListener(prxChangeListener);
+		prxPassField.addKeyListener(prxChangeListener);
+		prxPortSpinner.addChangeListener(new ChangeListener() {
+			public void stateChanged(ChangeEvent e) {
+				proxyChangeState = true;
+			}
+		});
+		prxPanel.add(prxUseBox);
+		
+		prxPanel.add(prxHostLabel);
+		prxPanel.add(prxHostField);
+		
+		prxPanel.add(prxPortLabel);
+		prxPanel.add(prxPortSpinner);
+		
+		prxPanel.add(prxUserLabel);
+		prxPanel.add(prxUserField);
+		
+		prxPanel.add(prxPassLabel);
+		prxPanel.add(prxPassField);
+		prxPanel.add(Box.createVerticalBox());
+		
+		final JPanel advPanel = new JPanel();
 		BoxLayout advLayout = new BoxLayout(advPanel,BoxLayout.Y_AXIS); 
 		advPanel.setLayout(advLayout);
 		panes.add("Advanced", advPanel);
-		
+		panes.addChangeListener(new ChangeListener() {
+			
+			public void stateChanged(ChangeEvent e) {
+		        JTabbedPane pane = (JTabbedPane)e.getSource();
+
+		        if (proxyChangeState && pane.getSelectedComponent() == advPanel) {
+		        	Properties properties = new Properties();
+		        	properties.setProperty(Constants.PROXY_USERNAME, prxUserField.getText().trim());
+		        	properties.setProperty(Constants.PROXY_PASSWORD, new String(prxPassField.getPassword()).trim());
+		        	properties.setProperty(Constants.PROXY_HOST, prxHostField.getText().trim());
+		        	properties.setProperty(Constants.PROXY_PORT, prxPortSpinner.getValue().toString());
+		        	properties.setProperty(Constants.PROXY_USE, Boolean.toString(prxUseBox.isSelected()));
+		        	ProxyCfg prx = ProxyCfg.parseConfig(properties);
+		        	setProxy(prx);
+		        	revalidateSearcher(null);
+		        }
+			}
+		});
 		JLabel domainLabel = new JLabel("Deviant Art domain name");
 		domainLabel.setToolTipText("The deviantART main domain, should it ever change.");
 		
 		domainField = new JTextField(config.getProperty(Constants.DOMAIN));
 		domainLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		domainLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		domainField.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		domainField.setMaximumSize(new Dimension(Integer.MAX_VALUE, domainField.getFont().getSize() * 2));
+		
 		advPanel.add(domainLabel);
 		advPanel.add(domainField);
 		
@@ -316,7 +468,9 @@ public class PreferencesDialog extends JDialog {
 		throttleSpinner.setModel(new SpinnerNumberModel(Integer.parseInt(config.getProperty(Constants.THROTTLE,"0")),5,60,1));
 		
 		throttleLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		throttleLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		throttleSpinner.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		throttleSpinner.setMaximumSize(new Dimension(Integer.MAX_VALUE, throttleSpinner.getFont().getSize() * 2));
 		
 		advPanel.add(throttleLabel);
 		advPanel.add(throttleSpinner);
@@ -344,45 +498,30 @@ public class PreferencesDialog extends JDialog {
 		});
 		
 		
-		String selectedClazz = config.getProperty(Constants.SEARCHER,com.dragoniade.deviantart.deviation.SearchRss.class.getName());
-		boolean selected = false;
 		try {
-			int weight = -1;
 			for (Class<Search> clazz : SearcherClassCache.getInstance().getClasses()) {
 				
 				Search searcher = clazz.newInstance();
 				String name = searcher.getName();
-				String clazzName = clazz.getName();
-				boolean isValid = searcher.validate();
 				
-				SearchItem item = new SearchItem(name, clazzName, isValid);
+				SearchItem item = new SearchItem(name, clazz.getName(), true);
 				searcherBox.addItem(item);
-				if (clazzName.equals(selectedClazz)) {
-					searcherBox.setSelectedItem(item);
-					selected = true;
-				}
-				if (!selected && isValid && searcher.priority() > weight) {
-					searcherBox.setSelectedItem(item);
-					weight = searcher.priority();
-				}
 			}
+			String selectedClazz = config.getProperty(Constants.SEARCHER,com.dragoniade.deviantart.deviation.SearchRss.class.getName());
+			revalidateSearcher(selectedClazz);
 		} catch (Exception e1) {
 			throw new RuntimeException(e1);
 		}
 		
 		searcherLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		searcherLabel.setBorder(new EmptyBorder(0, 5, 0, 5));
 		searcherBox.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		searcherBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, searcherBox.getFont().getSize() * 2));
 		
 		advPanel.add(searcherLabel);
 		advPanel.add(searcherBox);
 		
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
+		advPanel.add(Box.createVerticalBox());
 		
 		add(panes, BorderLayout.CENTER);
 		
@@ -468,16 +607,13 @@ public class PreferencesDialog extends JDialog {
 				String domain = domainField.getText().trim();
 				String throttle = throttleSpinner.getValue().toString();
 				String searcher = searcherBox.getSelectedItem().toString();
-				
-				String search = SEARCH.FAVORITE.toString();
-				if (favoriteRadio.isSelected()) {
-					search = SEARCH.FAVORITE.toString();
-				}
-				
-				if (galleryRadio.isSelected()) {
-					search = SEARCH.GALLERY.toString();
-				}
-				
+
+				String prxUse = Boolean.toString(prxUseBox.isSelected());
+				String prxHost = prxHostField.getText().trim();
+				String prxPort = prxPortSpinner.getValue().toString();
+				String prxUsername = prxUserField.getText().trim();
+				String prxPassword= new String(prxPassField.getPassword()).trim();
+					
 				if (!testPath(location,username)) {
 					JOptionPane.showMessageDialog(parent,errorMsg ,"Error",JOptionPane.ERROR_MESSAGE);	
 				}
@@ -492,8 +628,14 @@ public class PreferencesDialog extends JDialog {
 				p.setProperty(Constants.DOMAIN, domain);
 				p.setProperty(Constants.THROTTLE, throttle);
 				p.setProperty(Constants.SEARCHER, searcher);
-				p.setProperty(Constants.SEARCH, search);
+				p.setProperty(Constants.SEARCH, selectedSearch.getId());
 				
+				p.setProperty(Constants.PROXY_USE, prxUse);
+				p.setProperty(Constants.PROXY_HOST, prxHost);
+				p.setProperty(Constants.PROXY_PORT, prxPort);
+				p.setProperty(Constants.PROXY_USERNAME, prxUsername);
+				p.setProperty(Constants.PROXY_PASSWORD, prxPassword);
+
 				owner.savePreferences(p);
 				parent.dispose();
 			}
@@ -522,6 +664,34 @@ public class PreferencesDialog extends JDialog {
 		setVisible(true);
 	}
 	
+	@SuppressWarnings("unchecked")
+	private void revalidateSearcher(String selectedClazz) {
+		proxyChangeState = false;
+		boolean selected = false;
+		int weight = -1;
+		for (int i = 0; i < searcherBox.getItemCount(); i++ ) {
+			SearchItem item = (SearchItem) searcherBox.getItemAt(i);
+			try {
+				Class<Search> clazz = (Class<Search>) Search.class.getClassLoader().loadClass(item.clazz);
+				Search searcher = clazz.newInstance();
+				searcher.setClient(client);
+				boolean isValid = searcher.validate();
+				item.isValid = isValid;
+				
+				if (item.clazz.equals(selectedClazz)) {
+					searcherBox.setSelectedItem(item);
+					selected = true;
+				}
+				if (!selected && isValid && searcher.priority() > weight) {
+					searcherBox.setSelectedItem(item);
+					weight = searcher.priority();
+				}
+			} catch (Exception e ) {
+				throw new RuntimeException(e);
+			}
+		}
+	
+	}
 	private boolean testPath(String location, String username) {
 		File dest = LocationHelper.getFile(location, username,sample,sample.getImageFilename() );
 		
@@ -608,6 +778,23 @@ public class PreferencesDialog extends JDialog {
 		
 		public String toString() {
 			return clazz;
+		}
+	}
+	
+	private void setProxy(ProxyCfg prx) {
+		HostConfiguration hostConfiguration = client.getHostConfiguration();
+		if ( prx != null) {
+			ProxyHost proxyHost = new ProxyHost(prx.getHost(), prx.getPort());
+			hostConfiguration.setProxyHost(proxyHost);	
+			if (prx.getUsername() != null) {
+				UsernamePasswordCredentials upCred = new UsernamePasswordCredentials(prx.getUsername(), prx.getPassword());
+				client.getState().setProxyCredentials(AuthScope.ANY, upCred);
+			} else {
+				client.getState().clearProxyCredentials();
+			}
+		} else {
+			hostConfiguration.setProxyHost(null);	
+			client.getState().clearProxyCredentials();
 		}
 	}
 }

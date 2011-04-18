@@ -20,12 +20,20 @@ package com.dragoniade.deviantart.ui;
 
 public interface Constants {
 
-	public static final String USERNAME = "config.username";
-	public static final String LOCATION = "config.location";
-	public static final String MATURE   = "config.locationMature";
-	public static final String DOMAIN   = "config.domain";
-	public static final String LNF      = "config.lnf";
-	public static final String THROTTLE = "config.throttle";
-	public static final String SEARCHER = "config.searcher";
-	public static final String SEARCH = "config.search";
+	public static final String USERNAME         = "config.username";
+	public static final String LOCATION         = "config.location";
+	public static final String MATURE           = "config.locationMature";
+	public static final String DOMAIN           = "config.domain";
+	public static final String LNF              = "config.lnf";
+	public static final String THROTTLE         = "config.throttle";
+	public static final String SEARCHER         = "config.searcher";
+	public static final String SKIP_COLLECTION  = "config.skipcollection";
+	public static final String SEARCH           = "config.search";
+	public static final String PROXY_USE        = "config.proxy.use";
+	public static final String PROXY_HOST       = "config.proxy.host";
+	public static final String PROXY_PORT       = "config.proxy.port";
+	public static final String PROXY_USERNAME   = "config.proxy.username";
+	public static final String PROXY_PASSWORD   = "config.proxy.password";
+	public static final String USERNAME_LIST    = "config.username.list";	
 }
+

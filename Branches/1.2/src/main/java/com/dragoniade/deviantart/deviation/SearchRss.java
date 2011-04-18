@@ -18,22 +18,24 @@
 */
 package com.dragoniade.deviantart.deviation;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
-import org.apache.commons.httpclient.HttpVersion;
 import org.apache.commons.httpclient.methods.GetMethod;
-import org.apache.commons.httpclient.params.HttpClientParams;
 import org.jaxen.NamespaceContext;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -59,15 +61,9 @@ public class SearchRss implements Search{
 	public SearchRss() {
 		this.offset = 0;
 		this.total = -1;
-		
-		HttpClientParams params = new HttpClientParams();
-		params.setVirtualHost("backend.deviantart.com");
-		params.setVersion(HttpVersion.HTTP_1_1);
-		client = new HttpClient(params);
-		
 	}
 	
-	public List<Deviation> search(ProgressDialog progress) {
+	public List<Deviation> search(ProgressDialog progress, Collection collection) {
 		if ( user == null ) {
 			throw new IllegalStateException("You must set the user before searching.");
 		}
@@ -76,11 +72,12 @@ public class SearchRss implements Search{
 		}
 		if (total < 0) {
 			progress.setText("Fetching total (0)");
-			total = retrieveTotal(progress);
+			total = retrieveTotal(progress, collection);
 			progress.setText("Total: " + total);
 		}
 		
-		String queryString = "http://backend.deviantart.com/rss.xml?q=" + search.toString() + ":" + user + "&type=deviation&offset=" + offset;
+		String searchQuery = search.getSearch().replace("%username%", user);
+		String queryString = "http://backend.deviantart.com/rss.xml?q=" + searchQuery + (collection == null? "" : "/" + collection.getId()) + "&type=deviation&offset=" + offset;
 		GetMethod method = new GetMethod(queryString);
 		List<Deviation> results = new ArrayList<Deviation>(OFFSET);
 		try {
@@ -126,7 +123,7 @@ public class SearchRss implements Search{
 				da.setUrl(toolkit.getNodeAsString(deviation, "link"));
 				da.setTimestamp(parseDate(toolkit.getNodeAsString(deviation, "pubDate")));
 				da.setMature(!"nonadult".equals(toolkit.getNodeAsString(deviation, "media:rating",context)));
-				
+				da.setCollection(collection);
 				
 				Element documentNode = (Element) toolkit.getSingleNode(deviation, "media:content[@medium='document']",context);
 				Element imageNode = (Element) toolkit.getSingleNode(deviation, "media:content[@medium='image']",context);
@@ -173,9 +170,10 @@ public class SearchRss implements Search{
 	
 	public boolean validate() {
 		String user = "";
-		SEARCH search = SEARCH.FAVORITE;
+		SEARCH search = SEARCH.getDefault();
+		String searchQuery = search.getSearch().replace("%username%", user);
 		
-		String queryString = "http://backend.deviantart.com/rss.xml?q=" + search.toString() + ":" + user + "&type=deviation";
+		String queryString = "http://backend.deviantart.com/rss.xml?q=" + searchQuery + "&type=deviation";
 		GetMethod method = new GetMethod(queryString);
 		try {
 			
@@ -184,12 +182,25 @@ public class SearchRss implements Search{
 			if (sc != 200) {
 				return false;
 			}
-			String response = method.getResponseBodyAsString();
-			if (response == null) {
+			InputStream is = method.getResponseBodyAsStream();
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			
+			byte[] buffer = new byte[4096];
+			int read = -1;
+			while ((read = is.read(buffer)) > -1) {
+				baos.write(buffer,0,read);
+				if (baos.size() > 2097152) {
+					return false;
+				}
+			}
+			String charsetName = method.getResponseCharSet();
+			String body = baos.toString(charsetName);
+			
+			if (body.length() == -0) {
 				return false;
 			}
 		
-			if (response.indexOf("<channel") < 0) {
+			if (body.indexOf("<channel") < 0) {
 				return false;
 			}
 			return true;
@@ -214,6 +225,7 @@ public class SearchRss implements Search{
 	
 	public void startAt(int offset) {
 		this.offset = offset;
+		this.total = -1;
 	}
 
 	public int getOffset() {
@@ -245,14 +257,20 @@ public class SearchRss implements Search{
 		}
 	}
 	
-	private int retrieveTotal(ProgressDialog progress) {
-		int offset = 6000;
+	private int retrieveTotal(ProgressDialog progress, Collection collection) {
+		int offset = collection == null? 6000 : 480;
 		int greaterThan = 0;
 		int lessThan = Integer.MAX_VALUE;
 		int iteration = 0;
+		String searchQuery = search.getSearch().replace("%username%", user);
+
 		while (total < 0) {
+			if (progress.isCancelled()) {
+				return -1;
+			}
+			
 			progress.setText("Fetching total (" + ++iteration + ")");
-			String queryString = "http://backend.deviantart.com/rss.xml?q=" + search.toString() + ":" + user + "&type=deviation&offset=" + offset;
+			String queryString = "http://backend.deviantart.com/rss.xml?q=" + searchQuery + (collection == null? "" : "/" + collection.getId()) + "&type=deviation&offset=" + offset;
 			GetMethod method = new GetMethod(queryString);
 			try {
 				int sc = -1;
@@ -326,7 +344,10 @@ public class SearchRss implements Search{
 					Thread.sleep(500);
 				} catch (InterruptedException e) {}
 			} catch (IOException e) {
-				
+				int res = DialogHelper.showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + e + ". Try again?","Continue?",JOptionPane.YES_NO_OPTION );
+				if (res == JOptionPane.NO_OPTION) {
+					return -1;
+				}
 			}
 		}
 		
@@ -336,5 +357,70 @@ public class SearchRss implements Search{
 
 	public int priority() {
 		return 100;
+	}
+	
+	public void setClient(HttpClient client) {
+		this.client = client;
+	}
+	
+	public List<Collection> getCollections() {
+		List<Collection> collections = new ArrayList<Collection>();
+		
+		if (search.getCollection() == null) {
+			collections.add(null);
+			return collections;
+		}
+		
+		String queryString = "http://" + user + ".deviantart.com/" + search.getCollection() + "/";
+		GetMethod method = new GetMethod(queryString);
+				
+		try {
+			int sc = -1;
+			do {
+				sc = client.executeMethod(method);
+				if (sc != 200) {
+					LoggableException ex = new LoggableException(method.getResponseBodyAsString());
+					Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);
+					
+					int res = DialogHelper.showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_OPTION );
+					if (res == JOptionPane.NO_OPTION) {
+						return null;
+					}
+				}
+			} while (sc != 200); 
+			
+			InputStream is = method.getResponseBodyAsStream();
+			ByteArrayOutputStream baos = new ByteArrayOutputStream();
+			
+			byte[] buffer = new byte[4096];
+			int read = -1;
+			while ((read = is.read(buffer)) > -1) {
+				baos.write(buffer,0,read);
+				if (baos.size() > 2097152) {
+					int res = DialogHelper.showConfirmDialog(owner, "An error has occured: The document is too big (over 2 megabytes) and look suspicious. Abort?","Continue?",JOptionPane.YES_NO_OPTION );
+					if (res == JOptionPane.YES_NO_OPTION) {
+						return null;
+					}
+				}
+			}
+			String charsetName = method.getResponseCharSet();
+			String body = baos.toString(charsetName);
+			String regex = user + ".deviantart.com/" + search.getCollection() + "/([0-9]+)\"[^>]*>([^<]+)<";
+			Pattern pattern = Pattern.compile(regex,Pattern.CASE_INSENSITIVE);
+			Matcher matcher = pattern.matcher(body);
+			while (matcher.find()) {
+				String id = matcher.group(1);
+				String name = matcher.group(2);
+				Collection c = new Collection(Long.parseLong(id), name);
+				collections.add(c);
+			}
+		}
+		catch (IOException e) {
+		} finally {
+			method.releaseConnection();
+		}
+		
+		collections.add(null);
+		return collections;
 	}
 }

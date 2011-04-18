@@ -40,6 +40,8 @@ public class LocationHelper {
 		replace(sb,"%artist%",da.getArtist());
 		replace(sb,"%title%",normalize(da.getTitle()));
 		replace(sb,"%filename%",filename);
+		replace(sb,"%collection%",da.getCollection() != null? normalize(da.getCollection().getName()): "");	
+		
 		int index = filename.lastIndexOf('.');
 		String ext = "";
 		if (index > 0) {
