@@ -1,6 +1,6 @@
 /**
  *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -21,12 +21,14 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.util.HashMap;
 import java.util.List;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.jaxen.JaxenException;
+import org.jaxen.NamespaceContext;
 import org.jaxen.dom.DOMXPath;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -53,10 +55,22 @@ public class XmlToolkit {
 	}
 	
 	public String getNodeAsString(Node pNode, String pXPath) {
+		return getNodeAsString(pNode, pXPath, null);
+	}
+	
+	public NamespaceContext getNamespaceContext(final HashMap<String, String> prefixes) {
+		return new NamespaceContext() {
+
+			public String translateNamespacePrefixToUri(String prefix) {
+				return prefixes.get(prefix);
+			}
+		};
+	}
+	public String getNodeAsString(Node pNode, String pXPath, NamespaceContext namespaceContext) {
 		if (pNode == null) {
 			throw new NullPointerException();
 		}
-		Node wNode = getSingleNode(pNode, pXPath);
+		Node wNode = getSingleNode(pNode, pXPath,namespaceContext);
 		if (wNode == null) {
 			return "";
 		}
@@ -92,11 +106,18 @@ public class XmlToolkit {
 		return Integer.parseInt(fs.getNodeValue());
 	}	
 	public Node getSingleNode(Node pNode, String pXPath) {
+		return	getSingleNode( pNode, pXPath, null);
+	}
+	
+	public Node getSingleNode(Node pNode, String pXPath, NamespaceContext namespaceContext) {
 		if (pNode == null) {
 			throw new NullPointerException();
 		}
 		try {
 			DOMXPath wDOMXPath = new DOMXPath(pXPath);
+			if (namespaceContext != null) {
+				wDOMXPath.setNamespaceContext(namespaceContext);
+			}
 			return (Node) wDOMXPath.selectSingleNode(pNode);
 		} catch (JaxenException e) {			
 			throw new RuntimeException(e);
@@ -250,7 +271,7 @@ public class XmlToolkit {
 		try {
 			// wDocument = documentBuilder.parse(pInput);
 			DocumentBuilderFactory wDocumentBuilderFactory = DocumentBuilderFactory.newInstance();
-			wDocumentBuilderFactory.setNamespaceAware(false);
+			wDocumentBuilderFactory.setNamespaceAware(true);
 			DocumentBuilder documentBuilder = wDocumentBuilderFactory.newDocumentBuilder();
 			wDocument = documentBuilder.parse(pInput);
 		} catch (Exception e) {

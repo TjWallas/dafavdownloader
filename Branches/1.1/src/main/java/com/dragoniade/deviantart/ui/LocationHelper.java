@@ -1,7 +1,7 @@
 /**
  *    Location Helper - Render the target location of an image
  *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -32,9 +32,8 @@ public class LocationHelper {
 	 *  %extE% : The Deviation's extension.
 	 */
 	
-	public static  File getFile(String location, String username, Deviation da, boolean primary) {
+	public static  File getFile(String location, String username, Deviation da, String filename) {
 		StringBuilder sb = new StringBuilder(location);
-		String filename = primary?da.getPrimaryFilename():da.getSecondaryFilename();
 				
 		replace(sb,"%id%",Long.toString(da.getId()));
 		replace(sb,"%user%",username);

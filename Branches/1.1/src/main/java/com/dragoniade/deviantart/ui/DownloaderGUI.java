@@ -1,7 +1,7 @@
 /**
  *    DownloaderGUI - Provide the GUI to the software.
- *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    Copyright (C) 2009-2011  Philippe Busque
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ import java.io.PrintWriter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Map.Entry;
 
 import javax.swing.AbstractAction;
 import javax.swing.BoxLayout;
@@ -55,8 +56,12 @@ import javax.swing.event.HyperlinkListener;
 import javax.swing.event.HyperlinkEvent.EventType;
 import javax.swing.filechooser.FileFilter;
 
+import com.dragoniade.clazz.SearcherClassCache;
+import com.dragoniade.deviantart.deviation.Search;
+import com.dragoniade.deviantart.deviation.Search.SEARCH;
 import com.dragoniade.deviantart.favorites.FavoritesDownloader;
 import com.dragoniade.deviantart.ui.MenuBar.ACTION;
+import com.dragoniade.exceptions.LoggableException;
 
 
 public class DownloaderGUI extends JFrame implements ActionListener {
@@ -64,7 +69,7 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 	/**
 	 * 
 	 */
-	private static final String WEBSITE_URL = "http://dafavdownloader.sourceforge.net";
+	private static final String WEBSITE_URL = "https://sourceforge.net/projects/dafavdownloader";
 	private static final String DEVIANTART_URL = "http://www.deviantart.com";
 	
 	private static final long serialVersionUID = 8356316629221850066L;
@@ -75,19 +80,11 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 	private final DownloaderGUI instance; 
 	private JTextPane textPane;
 	private JSpinner spinner;
+	private OffsetSpinnerModel spinnerModel;
 	
 	public DownloaderGUI(File config) {
 		Locale.setDefault(Locale.ENGLISH);
-		String defaultLocations = System.getProperty("user.home") + File.separator + "deviantART" + File.separator  + 
-		"%user%" + File.separator  + "%artist%" + File.separator  + "%title%" + File.separator + "%filename%";
-
-		properties = new Properties();
-		properties.setProperty(Constants.USERNAME, System.getProperty("user.name"));
-		properties.setProperty(Constants.LOCATION, defaultLocations);
-		properties.setProperty(Constants.MATURE, defaultLocations);
-		properties.setProperty(Constants.DOMAIN, "www.deviantart.com");
-		properties.setProperty(Constants.LNF, UIManager.getSystemLookAndFeelClassName());
-		properties.setProperty(Constants.THROTTLE, "0");
+		properties = getDefaults();
 		
 		if (config == null) {
 			File home = new File(System.getProperty("user.home"),".DaFavorites");
@@ -140,24 +137,31 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 		JLabel skipLabel = new JLabel("Skip:");
 		
 		spinner = new JSpinner();
-		spinner.setModel(new OffsetSpinnerModel());
+		spinnerModel = new OffsetSpinnerModel(getSearchOffset());
+		spinner.setModel(spinnerModel);
 		
 		jButton = new JButton("Download");
 		jButton.setMnemonic('D');
 		jButton.addActionListener(new ActionListener() {
 
 			public void actionPerformed(ActionEvent e) {
+				
 				final ProgressDialog progress = new ProgressDialog(instance);
 				Runnable r = new Runnable() {
 					public void run() {
 						String username = properties.getProperty(Constants.USERNAME); 
 						String location = properties.getProperty(Constants.LOCATION);
 						String mature = properties.getProperty(Constants.MATURE,location);
-						int throttle = Integer.parseInt(properties.getProperty(Constants.THROTTLE,"0"));
-						
-						FavoritesDownloader downloader = new FavoritesDownloader(username,location,mature);
+						int throttle = Integer.parseInt(properties.getProperty(Constants.THROTTLE,"5"));
+						Search searcher = getSearcher();
+						if (searcher == null) {
+							return;
+						}
+						searcher.setSearch(SEARCH.lookup(properties.getProperty(Constants.SEARCH,SEARCH.FAVORITE.toString())));
+						FavoritesDownloader downloader = new FavoritesDownloader(username,location,mature, searcher);
 						downloader.setThrottle(throttle);
 						downloader.setGUI(instance, textPane, progress);
+						
 						try {
 							downloader.execute((Integer)spinner.getValue());	
 						} finally {
@@ -186,8 +190,6 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 		
 		this.setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 		
-		// this.setJMenuBar(new MenuBar(this));
-		
 		this.setJMenuBar(new MenuBar(this));
 		this.add(topPanel,BorderLayout.NORTH);
 		this.add(statusPanel,BorderLayout.SOUTH);
@@ -204,6 +206,12 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 	public void updateGUI() {
 		statusLabel.setText(properties.getProperty(Constants.USERNAME));
 		location.setText(properties.getProperty(Constants.LOCATION));
+		
+		int offset = getSearchOffset();
+		spinnerModel.setOffset(offset);
+		Integer value = (Integer)spinner.getValue();
+		value = (value / offset )* offset;
+		spinner.setValue(value);
 	}
 	
 	public static void main (String[] args) {
@@ -222,22 +230,28 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 			JOptionPane.showMessageDialog(null,"<html>Incompatible Java version. You must use Java 1.6 or later. <br>Your current version is " + System.getProperty("java.version") + ". Please upgrade or install the bundled version.</html>","Java version error",JOptionPane.ERROR_MESSAGE );
 			System.exit(100);
 		}
-		
+		SearcherClassCache.getInstance();
 		final DownloaderGUI gui = new DownloaderGUI(config);
 		Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler() {
 			
 			public void uncaughtException(Thread t, Throwable e) {
 				
-				File error = new File(System.getProperty("java.io.tmpdir") + File.pathSeparator + "error" + System.currentTimeMillis() + ".log");
-				error.getParentFile().mkdirs();
-				PrintWriter pw;
-				try {
-					pw = new PrintWriter(error);
-					e.printStackTrace(pw);
-					pw.close();
-				} catch (FileNotFoundException e1) {
+				if (System.getProperty("debug") == null) {
+					File error = new File(System.getProperty("java.io.tmpdir") + File.separatorChar + "error" + System.currentTimeMillis() + ".log");
+					error.getParentFile().mkdirs();
+					PrintWriter pw;
+					try {
+						pw = new PrintWriter(error);
+						e.printStackTrace(pw);
+						pw.close();
+					} catch (FileNotFoundException e1) {
+					}
+					if (!(e instanceof LoggableException)) {
+						JOptionPane.showMessageDialog(gui, "An internal error has occured and has been saved to  '" + error.getAbsolutePath() + "'. If this keep happening, please send us a copy of those report.");	
+					}
+				} else {
+					new DebugDialog(gui,e); 
 				}
-				JOptionPane.showMessageDialog(gui, "An internal error has occured and has been saved to  '" + error.getAbsolutePath() + "'. If this keep appending, please send us a copy of those report.");
 			}
 		});
 	}
@@ -255,7 +269,7 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 			}
 			break;
 			case SAVE: {
-				JFileChooser jfs = new JFileChooser(new File(System.getProperty("user.dir")));
+				JFileChooser jfs = new JFileChooser(new File(System.getProperty("user.home"),".DaFavorites"));
 				jfs.setDialogTitle("Save your current session");
 				FileFilter ff = new FssFileFilter();
 				jfs.setAcceptAllFileFilterUsed(true);
@@ -315,7 +329,7 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 			break;
 			
 			case OPEN: {
-				JFileChooser jfs = new JFileChooser(new File(System.getProperty("user.dir")));
+				JFileChooser jfs = new JFileChooser(new File(System.getProperty("user.home"),".DaFavorites"));
 				jfs.setDialogTitle("Load a previons saved session");
 				FileFilter ff = new FssFileFilter();
 				jfs.setAcceptAllFileFilterUsed(true);
@@ -376,18 +390,55 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 		}
 	}
 	
+	private int getSearchOffset() {
+		Search search = getSearcher();
+		if (search == null) {
+			return -1;
+		}
+		return search.getOffset();
+	}
+	
+	@SuppressWarnings("unchecked")
+	private Search getSearcher() {
+		String className = properties.getProperty(Constants.SEARCHER);
+		final Class<Search> clazz;
+		try {
+			clazz = (Class<Search>) Search.class.getClassLoader().loadClass(className);
+			return clazz.newInstance();
+		} catch (Exception ex) {
+			Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);
+			return null;
+		}
+	}
+	
+	private Properties getDefaults() {
+		String defaultLocations = System.getProperty("user.home") + File.separator + "deviantART" + File.separator  + 
+		"%user%" + File.separator  + "%artist%" + File.separator  + "%title%" + File.separator + "%filename%";
+		
+		Properties props = new Properties();
+		props.setProperty(Constants.USERNAME, System.getProperty("user.name"));
+		props.setProperty(Constants.LOCATION, defaultLocations);
+		props.setProperty(Constants.MATURE, defaultLocations);
+		props.setProperty(Constants.DOMAIN, "www.deviantart.com");
+		props.setProperty(Constants.LNF, UIManager.getSystemLookAndFeelClassName());
+		props.setProperty(Constants.THROTTLE, "5");
+		props.setProperty(Constants.SEARCHER, com.dragoniade.deviantart.deviation.SearchRss.class.getName());
+		props.setProperty(Constants.SEARCH, SEARCH.FAVORITE.toString());
+		return props;
+	}
+	
 	private void loadConfig(File config) throws IOException{
 		FileInputStream fis = null;
-		Properties backup = new Properties();
+		Properties props = new Properties();
 		try {
 			fis = new FileInputStream(config);
-			backup.putAll(properties);
-			properties.clear();
+			props.load(fis);
 			
-			properties.load(fis);;
+			for (Entry<Object,Object> entry : props.entrySet() ) {
+				properties.put(entry.getKey().toString(), entry.getValue().toString());
+			}
+			
 		} catch (IOException ex) {
-			properties.clear();
-			properties.putAll(backup);
 			throw ex;
 		} finally {
 			if (fis != null) {
@@ -397,6 +448,7 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 			}
 		}
 	}
+	
 	public void savePreferences(Properties p) {
 		properties.putAll(p);
 		updateGUI();
@@ -436,9 +488,9 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 		private static final long serialVersionUID = 2728826453091046235L;
 		int cur;
     	int offset;
-    	public OffsetSpinnerModel() {
+    	public OffsetSpinnerModel(int offset) {
         	cur = 0;
-        	offset = 24;
+        	this.offset = offset;
         	setMaximum((Integer.MAX_VALUE /offset) * offset);
     	}
 
@@ -472,8 +524,11 @@ public class DownloaderGUI extends JFrame implements ActionListener {
 			}
 			 fireStateChanged();
 		}
-    	
+    	public void setOffset(int offset) {
+    		this.offset = offset;
+    	}
     }
+    
     private class FssFileFilter extends FileFilter {
 		@Override
 		public boolean accept(File f) {

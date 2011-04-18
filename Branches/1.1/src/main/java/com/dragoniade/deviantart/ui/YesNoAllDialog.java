@@ -1,7 +1,7 @@
 /**
  *    YesNoAllDialog - Provide a Yes,No,All Yes, All no prompt dialog
  *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by

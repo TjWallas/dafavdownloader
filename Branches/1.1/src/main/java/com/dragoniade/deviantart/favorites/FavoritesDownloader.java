@@ -1,7 +1,7 @@
 /**
  *    FavoritesDownloader - Download favorites for a specified user
- *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    Copyright (C) 2009-2011  Philippe Busque
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -21,7 +21,6 @@ package com.dragoniade.deviantart.favorites;
 import java.awt.Component;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
@@ -43,6 +42,7 @@ import com.dragoniade.deviantart.ui.LocationHelper;
 import com.dragoniade.deviantart.ui.ProgressDialog;
 import com.dragoniade.deviantart.ui.SwingThread;
 import com.dragoniade.deviantart.ui.YesNoAllDialog;
+import com.dragoniade.exceptions.LoggableException;
 
 public class FavoritesDownloader {
 
@@ -54,11 +54,21 @@ public class FavoritesDownloader {
 	private ProgressDialog progress;
 	private JFrame owner;
 	private int sleepThrottle = 0;
+	private int requestCount = 0;
+	Search searcher;
 	
-	public FavoritesDownloader(String userId, String destination, String destinationMature) {
+	private enum STATUS {
+		DOWNLOADED,
+		CANCEL,
+		SKIP,
+		NOTFOUND;
+	}
+	
+	public FavoritesDownloader(String userId, String destination, String destinationMature, Search searcher) {
 		this.destination = destination;
 		this.destinationMature = destinationMature;
 		this.userId = userId;
+		this.searcher = searcher;
 		
 		HttpClientParams params = new HttpClientParams();
 		params.setVersion(HttpVersion.HTTP_1_1);
@@ -72,16 +82,15 @@ public class FavoritesDownloader {
 		this.progress = progress;
 	}
 
-	private File getFile(Deviation da, boolean primary, AtomicBoolean download, 
+	private File getFile(Deviation da, String url, String filename, AtomicBoolean download, 
 			YesNoAllDialog matureMoveDialog, YesNoAllDialog overwriteDialog, YesNoAllDialog overwriteNewerDialog, YesNoAllDialog deleteEmptyDialog) {
 		
-		String filename = primary? da.getPrimaryFilename(): da.getSecondaryFilename();
 		progress.setText("Downloading file '" + filename + "' from " + da.getArtist());
 		
 		String title = filename + " by " + da.getArtist();
 		long timestamp = da.getTimestamp().getTime();
-		File artPG = LocationHelper.getFile(destination, userId, da, primary);
-		File artMature= LocationHelper.getFile(destinationMature, userId, da, primary);
+		File artPG = LocationHelper.getFile(destination, userId, da, filename);
+		File artMature= LocationHelper.getFile(destinationMature, userId, da, filename);
 		File art = null;
 		
 		if (da.isMature()) {
@@ -152,12 +161,15 @@ public class FavoritesDownloader {
 		}
 		
 		return art;
-		
 	}
+	
 	public void execute(int offset) {
 		int skipped = 0;
-		Search searcher = new Search("favby:" + userId);
-		searcher.setOffset(offset);
+		requestCount = 0;
+		searcher.setFrame(owner);
+		searcher.setUser(userId);
+		searcher.startAt(offset);
+		
 		progress.setTotalMax(Integer.MAX_VALUE);
 		progress.setTotalValue(offset);
 		
@@ -167,14 +179,16 @@ public class FavoritesDownloader {
 		YesNoAllDialog overwriteDialog = new YesNoAllDialog();
 		YesNoAllDialog overwriteNewerDialog = new YesNoAllDialog();
 		YesNoAllDialog deleteEmptyDialog = new YesNoAllDialog();
-		AtomicBoolean download = new AtomicBoolean(true);
 		long lastSearch = -1L; 
-		while (true) {
-			if (progress.isCancelled()) {
-				return;
+		while (!progress.isCancelled()) {
+			
+			if (System.currentTimeMillis() - lastSearch  < 10000 ) {
+				throttle();
 			}
+			
 			progress.setText("Fetching results...");
-			List<Deviation> results = searcher.search(owner);
+			List<Deviation> results = searcher.search(progress);
+			requestCount++;
 			lastSearch = System.currentTimeMillis();
 			
 			if (results == null) {
@@ -184,161 +198,258 @@ public class FavoritesDownloader {
 			progress.setTotalMax(total);
 			
 			if (results.size() > 0) {
-				results:
 				for (Deviation da : results) {
 					if (progress.isCancelled()) {
 						return;
 					}
 					boolean downloaded = false;
 					progress.setUnitMax(1);
-					alternateDownload:
-					for (int i=0 ; i < 2; i++) {
-							
-						download.set(true);
-						boolean isPrimary = i == 0;
-						File art = getFile(da, isPrimary, download,  matureMoveDialog,  overwriteDialog,  overwriteNewerDialog,  deleteEmptyDialog);
-						if (art == null) {
+						
+					if (da.getDocumentDownloadUrl() != null) {
+						String url = da.getDocumentDownloadUrl();
+						String filename = da.getDocumentFilename();
+						
+						if (filename == null) {
+							AtomicBoolean download = new AtomicBoolean(true);
+							url = getDocumentUrl(da, download);
+							if (url == null) {
+								return;
+							}
+							if (!download.get()) {
+								skipped++; 
+								nextDeviation(skipped); 
+								continue;
+							}
+						}
+						filename = Deviation.extractFilename(url);
+						STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
+						
+						if (status == null) {
 							return;
 						}
 						
-						if (download.get() ) {
-							File parent = art.getParentFile();
-							if (!parent.exists()) {
-								if (!parent.mkdirs()) {
-									showMessageDialog(owner,"Unable to create '" + parent.getPath() + "'.","Error",JOptionPane.ERROR_MESSAGE);
-									return;
-								}
-							}
-							String downloadUrl = isPrimary?da.getPrimaryDownloadUrl(): da.getSecondaryDownloadUrl();
-							if (downloadUrl == null) {
+						switch (status) {
+							case CANCEL : return;
+							case SKIP : 
+								skipped++; 
+								nextDeviation(skipped); 
 								continue;
-							}
-							
-							GetMethod method = new GetMethod(downloadUrl);
-							try {
-								int sc = -1;
-								do {
-									sc = client.executeMethod(method);
-									if (sc != 200) {
-										if (sc == 404 || sc == 403) {
-											method.releaseConnection();
-											if (i == 0) {
-												continue alternateDownload;
-											}
-											String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + downloadUrl + " was not found" +  "</a>";
-											setPaneText(text);
-											progress.incremTotal();
-											continue results;
-										} else {
-											File error = new File("./error/" + System.currentTimeMillis() + ".log");
-											error.getParentFile().mkdirs();
-											FileWriter fw = new FileWriter(error);
-											fw.write (method.getResponseBodyAsString());
-											fw.close();
-											
-											int res = showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_CANCEL_OPTION );
-											if (res == JOptionPane.NO_OPTION) {
-												String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + downloadUrl + " has an error" +  "</a>";
-												setPaneText(text);
-												method.releaseConnection();
-												progress.incremTotal();
-												continue results;
-											}
-											if (res == JOptionPane.CANCEL_OPTION) {
-												return;
-											}
-											try {
-												Thread.sleep(500);
-											} catch (InterruptedException e) {}
-										}
-									}
-								} while (sc != 200); 
-								
-								int length =(int) method.getResponseContentLength();
-								int copied = 0;
-								progress.setUnitMax(length);
-								InputStream is = method.getResponseBodyAsStream();
-								File tmpFile = new File(art.getParentFile(),art.getName() + ".tmp");
-								FileOutputStream fos = new FileOutputStream(tmpFile,false);
-								byte[] buffer = new byte[16184];
-								int read = -1;
-								
-								while ((read = is.read(buffer)) > 0) {
-									fos.write(buffer,0,read);
-									copied+=read;
-									progress.setUnitValue(copied);
-									
-									if (progress.isCancelled()) {
-										fos.close();
-										method.releaseConnection();
-										tmpFile.delete();
-										return;
-									}
-								}
-								fos.close();
-								method.releaseConnection();
-								
-								if (art.exists()) {
-									if (!art.delete()) {
-										showMessageDialog(owner,"Unable to delete '" + art.getPath() + "'.","Error",JOptionPane.ERROR_MESSAGE);
-										return;
-									}
-								}
-								if (!tmpFile.renameTo(art)) {
-									showMessageDialog(owner,"Unable to rename '" + tmpFile.getPath() + "' to '" + art.getPath() +"'.","Error",JOptionPane.ERROR_MESSAGE);
-									return;
-								}
-								art.setLastModified(da.getTimestamp().getTime());
+							case DOWNLOADED : 
 								downloaded = true;
-								if (da.getPrimaryFilename().equals(da.getSecondaryFilename())) {
-									break;
+								break;
+							case NOTFOUND: 
+								if (da.getImageDownloadUrl() == null) {
+									String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + url + " was not found" +  "</a>";
+									setPaneText(text);
+									progress.incremTotal();
 								}
-							} catch (HttpException e) {
-								showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
-								return;
-							} catch (IOException e) {
-								showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
-								return;
-							}
-						} else {
-							progress.setText("Skipping file '" + da.getPrimaryFilename() + "' from " + da.getArtist());
 						}
 					}
-					if (!downloaded) {
-						skipped++;
-					}
-					progress.incremTotal();
-					progress.setUnitValue(1);
-					progress.setUnitMax(Integer.MAX_VALUE);
 					
-					if (skipped == 480) {
-					
-						int res = showConfirmDialog(owner, "480 deviations have been skipped so far. Continue scanning?","Continue?",JOptionPane.YES_NO_OPTION );
-						if (res == JOptionPane.NO_OPTION) {
+					if (da.getImageDownloadUrl() != null && !downloaded) {
+						String url = da.getImageDownloadUrl();
+						String filename = da.getImageFilename();
+						
+						STATUS status = downloadFile(da,url,filename,false,matureMoveDialog,overwriteDialog,overwriteNewerDialog,deleteEmptyDialog);
+						
+						if (status == null) {
 							return;
 						}
-					}
-				}
-			long searchDelay =  System.currentTimeMillis() - lastSearch;
-			if (sleepThrottle > 0 && searchDelay  < 10000) {
-				for (int i=sleepThrottle ; i > 0; i--) {
-					progress.setText("Throttling " + i);
-					try {
-						if (progress.isCancelled()) {
-							return;
+						
+						switch (status) {
+							case CANCEL : return;
+							case SKIP : 
+								skipped++; 
+								nextDeviation(skipped); 
+								continue;
+							case DOWNLOADED : 
+								downloaded = true;
+								break;
+							case NOTFOUND: 
+								String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + url + " was not found" +  "</a>";
+								setPaneText(text);
+								progress.incremTotal();
 						}
-						Thread.sleep(1000);
-					} catch (InterruptedException e) {
-						return;
 					}
+					nextDeviation(skipped); 
 				}
-			}
-
 			} else {
 				return;
 			}
 		}
+	}
+	
+	private void nextDeviation(int skipped) {
 		
+		progress.incremTotal();
+		progress.setUnitValue(1);
+		progress.setUnitMax(Integer.MAX_VALUE);	
+		
+		if (skipped == 480) {
+			int res = showConfirmDialog(owner, "480 deviations have been skipped so far. Continue scanning?","Continue?",JOptionPane.YES_NO_OPTION );
+			if (res == JOptionPane.NO_OPTION) {
+				return;
+			}
+		}
+		 
+		if (requestCount > 20) {
+			throttle();
+		}
+	}
+	
+	private void throttle() {
+		requestCount = 0;
+		for (int i=sleepThrottle ; i > 0; i--) {
+			progress.setText("Throttling " + i);
+			try {
+				if (progress.isCancelled()) {
+					return;
+				}
+				Thread.sleep(1000);
+			} catch (InterruptedException e) {
+				return;
+			}
+		}
+	}
+	private STATUS downloadFile(Deviation da, String downloadUrl, String filename, boolean reportError,
+			YesNoAllDialog matureMoveDialog, YesNoAllDialog overwriteDialog, YesNoAllDialog overwriteNewerDialog, YesNoAllDialog deleteEmptyDialog) {
+		
+		AtomicBoolean download = new AtomicBoolean(true);
+		File art = getFile(da,  downloadUrl, filename, download,  matureMoveDialog,  overwriteDialog,  overwriteNewerDialog,  deleteEmptyDialog);
+		if (art == null) {
+			return null;
+		}
+		
+		if (download.get() ) {
+			File parent = art.getParentFile();
+			if (!parent.exists()) {
+				if (!parent.mkdirs()) {
+					showMessageDialog(owner,"Unable to create '" + parent.getPath() + "'.","Error",JOptionPane.ERROR_MESSAGE);
+					return null;
+				}
+			}
+			
+			GetMethod method = new GetMethod(downloadUrl);
+			try {
+				int sc = -1;
+				do {
+					sc = client.executeMethod(method);
+					requestCount++;
+					if (sc != 200) {
+						if (sc == 404 || sc == 403) {
+							method.releaseConnection();
+							return STATUS.NOTFOUND;
+						} else {
+							LoggableException ex = new LoggableException(method.getResponseBodyAsString());
+							Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);
+							
+							int res = showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_CANCEL_OPTION );
+							if (res == JOptionPane.NO_OPTION) {
+								String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + downloadUrl + " has an error" +  "</a>";
+								setPaneText(text);
+								method.releaseConnection();
+								progress.incremTotal();
+								return STATUS.SKIP;
+							}
+							if (res == JOptionPane.CANCEL_OPTION) {
+								return null;
+							}
+							try {
+								Thread.sleep(500);
+							} catch (InterruptedException e) {}
+						}
+					}
+				} while (sc != 200); 
+				
+				int length =(int) method.getResponseContentLength();
+				int copied = 0;
+				progress.setUnitMax(length);
+				InputStream is = method.getResponseBodyAsStream();
+				File tmpFile = new File(art.getParentFile(),art.getName() + ".tmp");
+				FileOutputStream fos = new FileOutputStream(tmpFile,false);
+				byte[] buffer = new byte[16184];
+				int read = -1;
+				
+				while ((read = is.read(buffer)) > 0) {
+					fos.write(buffer,0,read);
+					copied+=read;
+					progress.setUnitValue(copied);
+					
+					if (progress.isCancelled()) {
+						is.close();
+						method.releaseConnection();
+						tmpFile.delete();
+						return null;
+					}
+				}
+				fos.close();
+				method.releaseConnection();
+				
+				if (art.exists()) {
+					if (!art.delete()) {
+						showMessageDialog(owner,"Unable to delete '" + art.getPath() + "'.","Error",JOptionPane.ERROR_MESSAGE);
+						return null;
+					}
+				}
+				if (!tmpFile.renameTo(art)) {
+					showMessageDialog(owner,"Unable to rename '" + tmpFile.getPath() + "' to '" + art.getPath() +"'.","Error",JOptionPane.ERROR_MESSAGE);
+					return null;
+				}
+				art.setLastModified(da.getTimestamp().getTime());
+				return STATUS.DOWNLOADED;
+			} catch (HttpException e) {
+				showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+				return null;
+			} catch (IOException e) {
+				showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+				return null;
+			}
+		} else {
+			progress.setText("Skipping file '" + filename + "' from " + da.getArtist());
+			return STATUS.SKIP;
+		}
+	}
+	
+	private String getDocumentUrl (Deviation da, AtomicBoolean download) {
+		String downloadUrl = da.getDocumentDownloadUrl(); 
+		GetMethod method = new GetMethod(downloadUrl);
+		
+		try {
+			int sc = -1;
+			do {
+				method.setFollowRedirects(false);
+				sc = client.executeMethod(method);
+				requestCount++;
+				
+				if (sc >= 300 && sc <= 399) {
+					String location =  method.getResponseHeader("Location").getValue();
+					method.releaseConnection();
+					return location;
+				} else {
+						LoggableException ex = new LoggableException(method.getResponseBodyAsString());
+						Thread.getDefaultUncaughtExceptionHandler().uncaughtException(Thread.currentThread(), ex);
+						
+						int res = showConfirmDialog(owner, "An error has occured when contacting deviantART : error " + sc + ". Try again?","Continue?",JOptionPane.YES_NO_CANCEL_OPTION );
+						if (res == JOptionPane.NO_OPTION) {
+							String text = "<br/><a style=\"color:red;\" href=\"" + da.getUrl()+ "\">" + downloadUrl + " has an error" +  "</a>";
+							setPaneText(text);
+							method.releaseConnection();
+							progress.incremTotal();
+							download.set(false);
+							return null;
+						}
+						if (res == JOptionPane.CANCEL_OPTION) {
+							return null;
+						}
+				}
+			} while (true); 
+		} catch (HttpException e) {
+			showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+			return null;
+		} catch (IOException e) {
+			showMessageDialog(owner,"Error contacting deviantART: " + e.getMessage(),"Error",JOptionPane.ERROR_MESSAGE);
+			return null;
+		}
 	}
 	
 	public void setThrottle(int throttle) {
@@ -396,7 +507,12 @@ public class FavoritesDownloader {
 					return;
 				}
 				if (current.listFiles().length == 0 ) {
-					current.delete();
+					if (!current.delete()) {
+						int result = JOptionPane.showConfirmDialog(owner, "Unable to delete '" + current.getAbsolutePath() + "'. Try again?","Error",JOptionPane.ERROR_MESSAGE );
+						if (result != JOptionPane.YES_OPTION) {
+							return;
+						}
+					}
 				} else {
 					return;
 				}

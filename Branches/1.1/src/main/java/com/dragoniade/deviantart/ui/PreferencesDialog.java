@@ -1,7 +1,7 @@
 /**
  *    PreferencesDialog - Provide a dialog to save a user preferences.
- *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    Copyright (C) 2009-2011  Philippe Busque
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 package com.dragoniade.deviantart.ui;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
@@ -31,22 +32,33 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Properties;
 import java.util.Stack;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.InputVerifier;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
+import javax.swing.ListCellRenderer;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.UIManager;
+import javax.swing.border.EmptyBorder;
 
+import com.dragoniade.clazz.SearcherClassCache;
 import com.dragoniade.deviantart.deviation.Deviation;
+import com.dragoniade.deviantart.deviation.Search;
+import com.dragoniade.deviantart.deviation.Search.SEARCH;
 
 public class PreferencesDialog extends JDialog {
 
@@ -68,6 +80,10 @@ public class PreferencesDialog extends JDialog {
 	private JTextField domainField;
 	private Deviation sample;
 	private JSpinner throttleSpinner;
+	private JComboBox searcherBox;
+	private JRadioButton galleryRadio;
+	private JRadioButton favoriteRadio;
+	private ButtonGroup buttonGroup;
 	
 	private final StringBuilder locationString;
 	private final StringBuilder locationMatureString;
@@ -80,10 +96,8 @@ public class PreferencesDialog extends JDialog {
 		sample.setId(15972367L);
 		sample.setTitle("Fella Promo");
 		sample.setArtist("devart");
-		sample.setPrimaryDownloadUrl(DOWNLOAD_URL);
-		sample.setPrimaryFilename(Deviation.extractFilename(DOWNLOAD_URL));
-		sample.setSecondaryDownloadUrl(DOWNLOAD_URL);
-		sample.setSecondaryFilename(Deviation.extractFilename(DOWNLOAD_URL));
+		sample.setImageDownloadUrl(DOWNLOAD_URL);
+		sample.setImageFilename(Deviation.extractFilename(DOWNLOAD_URL));
 		
 		setLayout(new BorderLayout());
 		panes = new JTabbedPane(JTabbedPane.TOP);
@@ -104,6 +118,41 @@ public class PreferencesDialog extends JDialog {
 		genPanel.add(userLabel);
 		genPanel.add(userField);
 		
+		
+		JLabel searchLabel = new JLabel("Search for");
+		searchLabel.setToolTipText("Select what you want to download from that user: it favorites or it galleries.");
+		
+		galleryRadio = new JRadioButton("Gallery");
+		favoriteRadio = new JRadioButton("Favorites");
+		
+		SEARCH search = SEARCH.lookup(config.getProperty(Constants.SEARCH,SEARCH.FAVORITE.toString()));
+		
+		buttonGroup = new ButtonGroup();
+		buttonGroup.add(favoriteRadio);
+		buttonGroup.add(galleryRadio);
+
+		switch (search) {
+		case FAVORITE:
+			favoriteRadio.setSelected(true);break;
+		case GALLERY:
+			galleryRadio.setSelected(true);break;
+		default:
+			favoriteRadio.setSelected(true);break;
+		}
+		JPanel radioPanel = new JPanel();
+		BoxLayout radioLayout = new BoxLayout(radioPanel,BoxLayout.X_AXIS);
+		radioPanel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		
+		radioPanel.setLayout(radioLayout);
+
+		galleryRadio.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		favoriteRadio.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		searchLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		
+		radioPanel.add(favoriteRadio);
+		radioPanel.add(galleryRadio);
+		genPanel.add(radioPanel);
+		
 		final JTextField sampleField = new JTextField("");
 		sampleField.setEditable(false);
 		
@@ -123,7 +172,7 @@ public class PreferencesDialog extends JDialog {
 			}
 
 			public void keyReleased(KeyEvent e) {
-				File dest = LocationHelper.getFile(locationField.getText(), userField.getText(),sample,true );
+				File dest = LocationHelper.getFile(locationField.getText(), userField.getText(),sample,sample.getImageFilename() );
 				locationString.setLength(0);
 				locationString.append(dest.getAbsolutePath());
 				sampleField.setText(locationString.toString());
@@ -170,7 +219,7 @@ public class PreferencesDialog extends JDialog {
 			}
 
 			public void keyReleased(KeyEvent e) {
-				File dest = LocationHelper.getFile(locationMatureField.getText(), userField.getText(),sample,true );
+				File dest = LocationHelper.getFile(locationMatureField.getText(), userField.getText(),sample,sample.getImageFilename() );
 				locationMatureString.setLength(0);
 				locationMatureString.append(dest.getAbsolutePath());
 				sampleField.setText(locationMatureString.toString());
@@ -217,11 +266,11 @@ public class PreferencesDialog extends JDialog {
 			}
 		});
 		
-		File dest = LocationHelper.getFile(locationField.getText(), userField.getText(),sample,true );
+		File dest = LocationHelper.getFile(locationField.getText(), userField.getText(),sample,sample.getImageFilename() );
 		sampleField.setText(dest.getAbsolutePath());
 		locationString.append(sampleField.getText());
 		
-		dest = LocationHelper.getFile(locationMatureField.getText(), userField.getText(),sample,true );
+		dest = LocationHelper.getFile(locationMatureField.getText(), userField.getText(),sample,sample.getImageFilename() );
 		locationMatureString.append(dest.getAbsolutePath());
 		
 		
@@ -264,7 +313,7 @@ public class PreferencesDialog extends JDialog {
 		throttleLabel.setToolTipText("Slow down search query by inserting a pause between them. This help prevent abuse when doing a massive download.");
 		
 		throttleSpinner = new JSpinner();
-		throttleSpinner.setModel(new SpinnerNumberModel(Integer.parseInt(config.getProperty(Constants.THROTTLE,"0")),0,60,1));
+		throttleSpinner.setModel(new SpinnerNumberModel(Integer.parseInt(config.getProperty(Constants.THROTTLE,"0")),5,60,1));
 		
 		throttleLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
 		throttleSpinner.setAlignmentX(JLabel.LEFT_ALIGNMENT);
@@ -272,7 +321,61 @@ public class PreferencesDialog extends JDialog {
 		advPanel.add(throttleLabel);
 		advPanel.add(throttleSpinner);
 		
-		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
+		JLabel searcherLabel = new JLabel("Searcher");
+		searcherLabel.setToolTipText("Select a searcher that will look for your favorites.");
+
+		searcherBox = new JComboBox();
+		searcherBox.setRenderer(new TogglingRenderer());
+		
+		final AtomicInteger index  = new AtomicInteger(0);
+		searcherBox.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				JComboBox combo = (JComboBox) e.getSource(); 
+				Object selectedItem = combo.getSelectedItem();
+				if (selectedItem instanceof SearchItem) {
+					SearchItem item = (SearchItem) selectedItem;
+					if (item.isValid) {
+						index.set(combo.getSelectedIndex());
+					} else {
+						combo.setSelectedIndex(index.get());
+					}
+				} 
+			}
+		});
+		
+		
+		String selectedClazz = config.getProperty(Constants.SEARCHER,com.dragoniade.deviantart.deviation.SearchRss.class.getName());
+		boolean selected = false;
+		try {
+			int weight = -1;
+			for (Class<Search> clazz : SearcherClassCache.getInstance().getClasses()) {
+				
+				Search searcher = clazz.newInstance();
+				String name = searcher.getName();
+				String clazzName = clazz.getName();
+				boolean isValid = searcher.validate();
+				
+				SearchItem item = new SearchItem(name, clazzName, isValid);
+				searcherBox.addItem(item);
+				if (clazzName.equals(selectedClazz)) {
+					searcherBox.setSelectedItem(item);
+					selected = true;
+				}
+				if (!selected && isValid && searcher.priority() > weight) {
+					searcherBox.setSelectedItem(item);
+					weight = searcher.priority();
+				}
+			}
+		} catch (Exception e1) {
+			throw new RuntimeException(e1);
+		}
+		
+		searcherLabel.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		searcherBox.setAlignmentX(JLabel.LEFT_ALIGNMENT);
+		
+		advPanel.add(searcherLabel);
+		advPanel.add(searcherBox);
+		
 		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
 		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
 		advPanel.add(new JLabel("<html><body>&nbsp; </body></html>"));
@@ -308,7 +411,7 @@ public class PreferencesDialog extends JDialog {
 				}
 				
 				if (!content.contains("%filename%") && !content.contains("%id%")) {
-					JOptionPane.showMessageDialog(input, "The location must contains at least a %username% or an %id% field.","Warning",JOptionPane.WARNING_MESSAGE);
+					JOptionPane.showMessageDialog(input, "The location must contains at least a %filename% or an %id% field.","Warning",JOptionPane.WARNING_MESSAGE);
 					return false;
 				}
 				return true;
@@ -364,7 +467,17 @@ public class PreferencesDialog extends JDialog {
 				String locationMature = locationMatureField.getText().trim();
 				String domain = domainField.getText().trim();
 				String throttle = throttleSpinner.getValue().toString();
-
+				String searcher = searcherBox.getSelectedItem().toString();
+				
+				String search = SEARCH.FAVORITE.toString();
+				if (favoriteRadio.isSelected()) {
+					search = SEARCH.FAVORITE.toString();
+				}
+				
+				if (galleryRadio.isSelected()) {
+					search = SEARCH.GALLERY.toString();
+				}
+				
 				if (!testPath(location,username)) {
 					JOptionPane.showMessageDialog(parent,errorMsg ,"Error",JOptionPane.ERROR_MESSAGE);	
 				}
@@ -378,6 +491,8 @@ public class PreferencesDialog extends JDialog {
 				p.setProperty(Constants.MATURE,locationMature);
 				p.setProperty(Constants.DOMAIN, domain);
 				p.setProperty(Constants.THROTTLE, throttle);
+				p.setProperty(Constants.SEARCHER, searcher);
+				p.setProperty(Constants.SEARCH, search);
 				
 				owner.savePreferences(p);
 				parent.dispose();
@@ -408,7 +523,7 @@ public class PreferencesDialog extends JDialog {
 	}
 	
 	private boolean testPath(String location, String username) {
-		File dest = LocationHelper.getFile(location, username,sample,true );
+		File dest = LocationHelper.getFile(location, username,sample,sample.getImageFilename() );
 		
 		Stack<File> stack = new Stack<File>();
 		Stack<File> toDelete = new Stack<File>();
@@ -422,9 +537,7 @@ public class PreferencesDialog extends JDialog {
 			while(!stack.isEmpty()) {
 				File file = stack.pop();
 				if (file.exists() ) {
-					if (!file.canWrite()) {
-						return false;
-					}
+					continue;
 				} else {
 					if (stack.isEmpty()) {
 						if (!file.createNewFile()) {
@@ -449,4 +562,52 @@ public class PreferencesDialog extends JDialog {
 		return true;
 	}
 	
+	
+	private class TogglingRenderer extends JLabel implements ListCellRenderer {
+		private static final long serialVersionUID = -8426795650241831785L;
+		public TogglingRenderer() {
+	    	super();
+	    	setOpaque(true);
+	        setBorder(new EmptyBorder(1, 1, 1, 1));
+
+	    }
+
+	    public Component getListCellRendererComponent( JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+	      if (isSelected) {
+	        setBackground(list.getSelectionBackground());
+	        setForeground(list.getSelectionForeground());
+	      } else {
+	        setBackground(list.getBackground());
+	        setForeground(list.getForeground());
+	      } 
+	      if  (value instanceof SearchItem) {
+	    	  SearchItem item = (SearchItem) value;
+		      if (!item.isValid) {
+			        setBackground(list.getBackground());
+			        setForeground(UIManager.getColor("Label.disabledForeground"));
+		      }
+		      setText(item.name);
+	      } else {
+	    	  setText((value == null) ? "" : value.toString());
+	      }
+	      setFont(list.getFont());
+	      return this;
+	    }  
+	}
+	
+	private class SearchItem {
+		String name;
+		String clazz;
+		boolean isValid;
+		
+		public SearchItem(String name, String clazz, boolean isValid) {
+			this.name = name;
+			this.clazz = clazz;
+			this.isValid = isValid;
+		}
+		
+		public String toString() {
+			return clazz;
+		}
+	}
 }

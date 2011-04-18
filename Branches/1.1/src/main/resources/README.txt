@@ -1,7 +1,7 @@
 deviantART Favorites Downloader
 Created by Dragoniade
 
-Version 1.0.0
+Version 1.1.0
 
 1. Installation
 2. Usage
@@ -60,8 +60,11 @@ the deviation account being downloaded. You can change this behavior in the
 preferences screen.
 
 
+2.2 Download
+After selecting the username, you can either download the favorites or the galleries
+from that account. Select which one you want. 
 
-2.2 Location
+2.3 Location
 Upon start-up, the downloader will also download the files into your home folder
 ( /home/***** on Linux or C:\Documents and Settings\***** on  Windows) under 
 the structure \deviantART\%user%\%artist%\%title%\%filename%.
@@ -76,16 +79,29 @@ different folder. This is convenient if you plan to use your saved deviations
 as a screen saver.
 
 
-2.3 Throttling
+2.4 Throttling
 The downloader warn when more than 480 deviations have been skipped for 
 download. A deviation is skipped when it has been previously and saved on disk.
 Should you plan to do synchronization regularly, it is recommend you throttle 
 your request. This add a few seconds delay between each search if no files has
 been downloaded. This prevent deviantART from blocking you temporarily should 
-too many request hammer their server.  A 5 seconds throttle is normally enough.
+too many request hammer their server.  A 5 seconds throttle is the minimum default.
 
 
 3 Changes log
+
+Version 1.1.0  2011/01/23
+* Added Support for custom searcher. 
+* Added the notion of Document, Images and Video
+* Added and set as default the RSS searcher. This is a solution for DA pulling the
+Stream Difi and not offering any support.
+* Added the ability to download a user gallery rather than only the favorites.
+* Forced throttling to 5 seconds minimum and applied it to every 20 requests. This is due
+to the RSS feed not supplying filename and having to do a request to retrieve it.
+
+
+Version 1.0.1  2010/12/05
+* Lessen the destination validation for Windows
 
 Version 1.0.0  2010/12/04
 * Initial release

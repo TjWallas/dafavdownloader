@@ -4,8 +4,8 @@
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <title>Help</title>
 <!-- 
-   Copyright (C) 2009-2010  Philippe Busque
-   http://dafavdownloader.sourceforge.net/
+   Copyright (C) 2009-2011  Philippe Busque
+   https://sourceforge.net/projects/dafavdownloader/
    
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 <body>
 <h1>deviantART Favorites Downloader</h1>
 <h2>User Manual
-<p>Version 1.0.0</p>
+<p>Version 1.1.0</p>
 <p>Copyright © 2009-2010 Dragoniade<br/>
 </p>
 
@@ -46,7 +46,12 @@
 
 <h3>Username</h3>
 <p>
-This control which user's favorite you're downloading. For most usage, it will be your own deviantART username, but if you want to download someone's else favorites or a club favorites, you can input their username there. 
+This control which user's favorite or gallery you're downloading. For most usage, it will be your own deviantART username, but if you want to download someone's else arts or a club arts, you can input their username there. 
+</p>
+
+<h3>Favorites or Gallery</h3>
+<p>
+This control what to download. You can either download the user favorites (usually yours) or put another user and download his/her gallery. The default is to download the user favorites. 
 </p>
 
 <h3>Download Location</h3>
@@ -72,6 +77,11 @@ At least one of the supplied field must be supplied: %id%, %filename%.
 <h3>Throttling</h3>
 <p>
 The application doesn't download files that have already been downloaded. When performing a rerun, this mean files will be skipped and deviantART will be contacted over and over for favorites updates. To lessen the load, a delay between search can be configured.  If the delay between searches are less than 10 seconds, a pause is performed for as many seconds specified here.
+</p>
+<h3>Searcher</h3>
+<p>
+Allow you to select which searcher to use. A searcher is what retrieve the information from deviantART about the favorites/gallery. Since deviantART doesn't provide any public API, the method to access this data may change overtime.<br/>
+Should new searchers be made available, you can select another one here. Currently only the RSS searcher is available.  
 </p>
 <br/><hr/>
 Copyright © 2009-2010 Philippe Busque. All Right Reserved.<br/>

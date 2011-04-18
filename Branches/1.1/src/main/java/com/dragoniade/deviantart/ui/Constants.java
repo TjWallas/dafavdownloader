@@ -1,7 +1,7 @@
 /**
  *    Constants - Software constants
- *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    Copyright (C) 2009-2011  Philippe Busque
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -26,4 +26,6 @@ public interface Constants {
 	public static final String DOMAIN   = "config.domain";
 	public static final String LNF      = "config.lnf";
 	public static final String THROTTLE = "config.throttle";
+	public static final String SEARCHER = "config.searcher";
+	public static final String SEARCH = "config.search";
 }

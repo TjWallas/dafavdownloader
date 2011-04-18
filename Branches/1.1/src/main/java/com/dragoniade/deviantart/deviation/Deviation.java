@@ -1,7 +1,7 @@
 /**
  *    Deviation - POJO for a deviation
- *    Copyright (C) 2009-2010  Philippe Busque
- *    http://dafavdownloader.sourceforge.net/
+ *    Copyright (C) 2009-2011  Philippe Busque
+ *    https://sourceforge.net/projects/dafavdownloader/
  *    
  *    This program is free software: you can redistribute it and/or modify
  *    it under the terms of the GNU General Public License as published by
@@ -30,10 +30,10 @@ public class Deviation implements Serializable {
 	private String url;
 	private String title;
 	private String artist;
-	private String primaryDownloadUrl;
-	private String secondaryDownloadUrl;
-	private String primaryFilename;
-	private String secondaryFilename;
+	private String imageDownloadUrl;
+	private String imageFilename;
+	private String documentDownloadUrl;
+	private String documentFilename;
 	private String resolution;
 	private Date timestamp;
 	private String category;
@@ -62,12 +62,6 @@ public class Deviation implements Serializable {
 	}
 	public void setUrl(String url) {
 		this.url = url;
-	}
-	public String getPrimaryDownloadUrl() {
-		return primaryDownloadUrl;
-	}
-	public String getSecondaryDownloadUrl() {
-		return secondaryDownloadUrl;
 	}
 	public String getTitle() {
 		return title;
@@ -99,35 +93,42 @@ public class Deviation implements Serializable {
 	public Date getTimestamp() {
 		return timestamp;
 	}
-	public String getPrimaryFilename() {
-		return primaryFilename;
-	}
-	public String getSecondaryFilename() {
-		return secondaryFilename;
-	}
-	public void setPrimaryFilename(String primaryFilename) {
-		this.primaryFilename = primaryFilename;
-	}
-	public void setSecondaryFilename(String secondaryFilename) {
-		this.secondaryFilename = secondaryFilename;
-	}
-	public void setPrimaryDownloadUrl(String primaryDownloadUrl) {
-		this.primaryDownloadUrl = primaryDownloadUrl;
-	}
-	public void setSecondaryDownloadUrl(String secondaryDownloadUrl) {
-		this.secondaryDownloadUrl = secondaryDownloadUrl;
-	}
 	
 	public static String extractFilename(String url) {
 		int beginIndex = url.lastIndexOf('/');
 		if (beginIndex > -1) {
-			return url.substring(beginIndex+1);
+			String filename = url.substring(beginIndex+1); 
+			return (filename.length() > 0) ? filename: null;
 		} else {
 			return url;
 		}
 	}
 	
 	public String toString() {
-		return primaryFilename + " by " + artist;	
+		return imageFilename + " by " + artist;	
+	}
+	public String getImageDownloadUrl() {
+		return imageDownloadUrl;
+	}
+	public String getImageFilename() {
+		return imageFilename;
+	}
+	public String getDocumentDownloadUrl() {
+		return documentDownloadUrl;
+	}
+	public String getDocumentFilename() {
+		return documentFilename;
+	}
+	public void setImageDownloadUrl(String imageDownloadUrl) {
+		this.imageDownloadUrl = imageDownloadUrl;
+	}
+	public void setImageFilename(String imageFilename) {
+		this.imageFilename = imageFilename;
+	}
+	public void setDocumentDownloadUrl(String documentDownloadUrl) {
+		this.documentDownloadUrl = documentDownloadUrl;
+	}
+	public void setDocumentFilename(String documentFilename) {
+		this.documentFilename = documentFilename;
 	}
 }
